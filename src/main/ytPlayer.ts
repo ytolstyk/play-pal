@@ -52,6 +52,23 @@ export class YtPlayer {
     if (!view) return
     this.videoId = videoId
     this.applyBounds()
+    this.navigate(view, videoId)
+  }
+
+  /** Back to the track's own page after the user navigated elsewhere inside the view. */
+  returnToTrack(): void {
+    if (!this.videoId || !this.view) return
+    // Already on the track's page: reloading would interrupt playback for nothing.
+    try {
+      const here = new URL(this.view.webContents.getURL())
+      if (here.pathname === '/watch' && here.searchParams.get('v') === this.videoId) return
+    } catch {
+      // unparsable URL (e.g. about:blank): fall through and navigate
+    }
+    this.navigate(this.view, this.videoId)
+  }
+
+  private navigate(view: WebContentsView, videoId: string): void {
     // A navigation superseded by another one rejects; that's expected, not an error.
     void view.webContents.loadURL(watchUrl(videoId)).catch(() => undefined)
   }

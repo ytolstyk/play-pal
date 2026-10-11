@@ -9,6 +9,7 @@ export const IPC = {
   cueFired: 'player:cue-fired',
   ytBounds: 'yt:bounds',
   ytCommand: 'yt:command',
+  ytReturn: 'yt:return',
   midiTest: 'midi:test',
   midiStatus: 'midi:status',
   midiReconnect: 'midi:reconnect'

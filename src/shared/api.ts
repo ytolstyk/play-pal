@@ -34,6 +34,8 @@ export interface Api {
   /** Where the YouTube Music view sits in the window; null hides it. */
   setYtBounds(rect: Rect | null): void
   ytCommand(command: YtCommand): void
+  /** Navigates the YouTube Music view back to the armed track's page (the user may have wandered off). */
+  ytReturn(): void
   testAction(action: MidiAction): Promise<void>
   getMidiStatus(): Promise<MidiStatus>
   onMidiStatus(cb: (s: MidiStatus) => void): () => void

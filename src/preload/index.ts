@@ -23,6 +23,7 @@ const api: Api = {
   onCueFired: subscribe<string>(IPC.cueFired),
   setYtBounds: (rect) => ipcRenderer.send(IPC.ytBounds, rect),
   ytCommand: (command) => ipcRenderer.send(IPC.ytCommand, command),
+  ytReturn: () => ipcRenderer.send(IPC.ytReturn),
   testAction: (action) => ipcRenderer.invoke(IPC.midiTest, action),
   getMidiStatus: () => ipcRenderer.invoke(IPC.midiStatus),
   onMidiStatus: subscribe<MidiStatus>(IPC.midiStatus),

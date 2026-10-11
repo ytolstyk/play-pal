@@ -251,6 +251,7 @@ function registerIpc(): void {
     const command = readYtCommand(raw)
     if (trusted(e) && command) yt.command(command)
   })
+  ipcMain.on(IPC.ytReturn, (e) => trusted(e) && yt.returnToTrack())
   ipcMain.handle(IPC.midiTest, (e, raw: unknown) => {
     if (trusted(e) && validateAction(raw).length === 0) sender.send(raw as MidiAction)
   })

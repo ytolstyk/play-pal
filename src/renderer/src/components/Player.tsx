@@ -13,6 +13,17 @@ interface Props {
 
 const RATES = [0.5, 0.75, 0.9, 1]
 const YT_BOUNDS_POLL_MS = 250
+const YT_HEIGHT = { min: 160, max: 900, default: 340, step: 20, storageKey: 'ytSlotHeight' }
+
+const loadYtHeight = (): number => {
+  try {
+    const n = Number(localStorage.getItem(YT_HEIGHT.storageKey))
+    if (n >= YT_HEIGHT.min && n <= YT_HEIGHT.max) return n
+  } catch {
+    // storage unavailable: use the default
+  }
+  return YT_HEIGHT.default
+}
 
 const isTypingTarget = (t: EventTarget | null): boolean =>
   t instanceof HTMLElement && ['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(t.tagName)
@@ -20,8 +31,18 @@ const isTypingTarget = (t: EventTarget | null): boolean =>
 export function Player({ track, onChange }: Props): React.JSX.Element {
   const { state, timeRef, audioRef, toggle, seek, setRate } = usePlayback(track)
   const [firedId, setFiredId] = useState<string | null>(null)
+  const [ytHeight, setYtHeight] = useState(loadYtHeight)
   const slotRef = useRef<HTMLDivElement>(null)
   const isYt = track.source.kind === 'ytmusic'
+
+  const changeYtHeight = (h: number): void => {
+    setYtHeight(h)
+    try {
+      localStorage.setItem(YT_HEIGHT.storageKey, String(h))
+    } catch {
+      // not persisted; the size still applies for this session
+    }
+  }
 
   useEffect(() => window.api.onCueFired(setFiredId), [])
 
@@ -41,7 +62,11 @@ export function Player({ track, onChange }: Props): React.JSX.Element {
     report()
     const timer = setInterval(report, YT_BOUNDS_POLL_MS)
     window.addEventListener('resize', report)
+    // The slider resizes the slot; follow it live instead of waiting for the next poll.
+    const observer = new ResizeObserver(report)
+    observer.observe(slot)
     return () => {
+      observer.disconnect()
       clearInterval(timer)
       window.removeEventListener('resize', report)
       window.api.setYtBounds(null)
@@ -98,7 +123,7 @@ export function Player({ track, onChange }: Props): React.JSX.Element {
       {track.source.kind === 'file' ? (
         <audio ref={audioRef} src={`ppfile://t/${track.id}`} preload="auto" />
       ) : (
-        <div className="yt-slot" ref={slotRef}>
+        <div className="yt-slot" ref={slotRef} style={{ height: ytHeight }}>
           <p className="muted small">YouTube Music loads here. Sign in once and the session is remembered.</p>
         </div>
       )}
@@ -120,6 +145,26 @@ export function Player({ track, onChange }: Props): React.JSX.Element {
           </select>
         </label>
         <button onClick={addCue}>Add cue here (M)</button>
+        {isYt && (
+          <>
+            <button onClick={() => window.api.ytReturn()} title="Navigate the video view back to this track">
+              Back to track
+            </button>
+            <label className="muted small">
+              View size
+              <input
+                type="range"
+                min={YT_HEIGHT.min}
+                max={YT_HEIGHT.max}
+                step={YT_HEIGHT.step}
+                value={ytHeight}
+                aria-label="Video view size"
+                onChange={(e) => changeYtHeight(Number(e.target.value))}
+                onPointerUp={(e) => e.currentTarget.blur()}
+              />
+            </label>
+          </>
+        )}
       </div>
       <div
         className="timeline"

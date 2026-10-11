@@ -5,19 +5,26 @@ import { watchUrl } from '../shared/url'
 import type { Rect, YtCommand } from '../shared/types'
 
 const PARTITION = 'persist:ytmusic'
-/** Sign-in and playback hop between exactly these hosts; user-content hosts (sites.google.com, ...) are refused. */
-const ALLOWED_HOSTS = new Set([
-  'music.youtube.com',
-  'www.youtube.com',
-  'accounts.youtube.com',
-  'accounts.google.com'
+/** Sign-in (2-factor, challenges) and playback hop across Google's and YouTube's own hosts. */
+const ALLOWED_SUFFIXES = ['.google.com', '.youtube.com']
+/** Google hosts that serve other people's content; never loaded in this view. */
+const REFUSED_HOSTS = new Set([
+  'sites.google.com',
+  'docs.google.com',
+  'drive.google.com',
+  'script.google.com',
+  'script.googleusercontent.com',
+  'groups.google.com',
+  'forms.google.com'
 ])
 const HIDDEN: Rect = { x: 0, y: 0, width: 0, height: 0 }
 
 const isAllowedUrl = (raw: string): boolean => {
   try {
     const u = new URL(raw)
-    return raw === 'about:blank' || (u.protocol === 'https:' && ALLOWED_HOSTS.has(u.hostname))
+    if (raw === 'about:blank') return true
+    if (u.protocol !== 'https:' || REFUSED_HOSTS.has(u.hostname)) return false
+    return ALLOWED_SUFFIXES.some((s) => u.hostname.endsWith(s) || u.hostname === s.slice(1))
   } catch {
     return false
   }
@@ -110,7 +117,9 @@ export class YtPlayer {
     wc.setWindowOpenHandler(() => ({ action: 'deny' }))
     // Redirects and subframes bypass will-navigate, so guard all three.
     const guard = (e: Electron.Event, url: string): void => {
-      if (!isAllowedUrl(url)) e.preventDefault()
+      if (isAllowedUrl(url)) return
+      console.warn(`[ytmusic] blocked navigation to ${url}`)
+      e.preventDefault()
     }
     wc.on('will-navigate', guard)
     wc.on('will-redirect', guard)

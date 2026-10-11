@@ -1,0 +1,145 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type { Cue, Track } from '../../../shared/types'
+import { DEFAULT_CUE_ACTION, sortedByTime } from '../../../shared/cues'
+import { formatTime } from '../../../shared/time'
+import { MAX_TITLE } from '../../../shared/types'
+import { usePlayback } from '../hooks/usePlayback'
+import { CueList } from './CueList'
+
+interface Props {
+  track: Track
+  onChange(change: (t: Track) => Track): void
+}
+
+const RATES = [0.5, 0.75, 0.9, 1]
+const YT_BOUNDS_POLL_MS = 250
+
+const isTypingTarget = (t: EventTarget | null): boolean =>
+  t instanceof HTMLElement && ['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(t.tagName)
+
+export function Player({ track, onChange }: Props): React.JSX.Element {
+  const { state, timeRef, audioRef, toggle, seek, setRate } = usePlayback(track)
+  const [firedId, setFiredId] = useState<string | null>(null)
+  const slotRef = useRef<HTMLDivElement>(null)
+  const isYt = track.source.kind === 'ytmusic'
+
+  useEffect(() => window.api.onCueFired(setFiredId), [])
+
+  // The YouTube Music view is a native overlay; keep it glued to the slot's rectangle.
+  useEffect(() => {
+    const slot = slotRef.current
+    if (!isYt || !slot) return
+    let last = ''
+    const report = (): void => {
+      const r = slot.getBoundingClientRect()
+      const rect = { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) }
+      const key = JSON.stringify(rect)
+      if (key === last) return
+      last = key
+      window.api.setYtBounds(rect)
+    }
+    report()
+    const timer = setInterval(report, YT_BOUNDS_POLL_MS)
+    window.addEventListener('resize', report)
+    return () => {
+      clearInterval(timer)
+      window.removeEventListener('resize', report)
+      window.api.setYtBounds(null)
+    }
+  }, [isYt])
+
+  const addCue = useCallback(() => {
+    onChange((t) => {
+      const previous = sortedByTime(t.cues).pop()
+      const cue: Cue = {
+        id: crypto.randomUUID(),
+        time: Math.round(timeRef.current * 1000) / 1000,
+        label: `Cue ${t.cues.length + 1}`,
+        action: previous?.action ?? DEFAULT_CUE_ACTION
+      }
+      return { ...t, cues: [...t.cues, cue] }
+    })
+  }, [onChange, timeRef])
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (isTypingTarget(e.target) || e.metaKey || e.ctrlKey || e.altKey) return
+      if (e.code === 'Space') {
+        e.preventDefault()
+        toggle()
+      } else if (e.code === 'KeyM') addCue()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [toggle, addCue])
+
+  const changeCue = useCallback(
+    (id: string, change: Partial<Cue>) =>
+      onChange((t) => ({ ...t, cues: t.cues.map((c) => (c.id === id ? { ...c, ...change } : c)) })),
+    [onChange]
+  )
+  const deleteCue = useCallback(
+    (id: string) => onChange((t) => ({ ...t, cues: t.cues.filter((c) => c.id !== id) })),
+    [onChange]
+  )
+
+  const duration = state.duration
+  const pct = (t: number): string => `${duration > 0 ? Math.min(100, (t / duration) * 100) : 0}%`
+
+  return (
+    <section className="player">
+      <input
+        className="title-input"
+        value={track.title}
+        maxLength={MAX_TITLE}
+        aria-label="Track title"
+        onChange={(e) => onChange((t) => ({ ...t, title: e.target.value }))}
+      />
+      {track.source.kind === 'file' ? (
+        <audio ref={audioRef} src={`ppfile://t/${track.id}`} preload="auto" />
+      ) : (
+        <div className="yt-slot" ref={slotRef}>
+          <p className="muted small">YouTube Music loads here. Sign in once and the session is remembered.</p>
+        </div>
+      )}
+      <div className="transport">
+        <button className="primary" onClick={toggle}>
+          {state.playing ? 'Pause' : 'Play'}
+        </button>
+        <span className="mono readout">
+          {formatTime(state.t)} / {formatTime(duration)}
+        </span>
+        <label className="muted small">
+          Speed
+          <select value={state.rate} onChange={(e) => setRate(Number(e.target.value))}>
+            {RATES.map((r) => (
+              <option key={r} value={r}>
+                {r}×
+              </option>
+            ))}
+          </select>
+        </label>
+        <button onClick={addCue}>Add cue here (M)</button>
+      </div>
+      <div
+        className="timeline"
+        role="slider"
+        aria-label="Position"
+        aria-valuemin={0}
+        aria-valuemax={Math.round(duration)}
+        aria-valuenow={Math.round(state.t)}
+        onClick={(e) => {
+          if (duration <= 0) return
+          const r = e.currentTarget.getBoundingClientRect()
+          seek(((e.clientX - r.left) / r.width) * duration)
+        }}
+      >
+        <div className="played" style={{ transform: `scaleX(${duration > 0 ? Math.min(1, state.t / duration) : 0})` }} />
+        {track.cues.map((c) => (
+          <div key={c.id} className={c.id === firedId ? 'marker fired' : 'marker'} style={{ left: pct(c.time) }} title={c.label} />
+        ))}
+      </div>
+      <CueList cues={track.cues} firedId={firedId} onChange={changeCue} onDelete={deleteCue} onSeek={seek} />
+    </section>
+  )
+}

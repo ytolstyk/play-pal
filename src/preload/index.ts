@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type { AudioFrame } from '../shared/audio'
 import type { Api } from '../shared/api'
 import { IPC } from '../shared/ipc'
 import type { MidiStatus, PlaybackState } from '../shared/types'
@@ -25,6 +26,7 @@ const api: Api = {
   setYtBounds: (rect) => ipcRenderer.send(IPC.ytBounds, rect),
   ytCommand: (command) => ipcRenderer.send(IPC.ytCommand, command),
   ytReturn: () => ipcRenderer.send(IPC.ytReturn),
+  onAudioFrame: subscribe<AudioFrame>(IPC.audioFrame),
   testAction: (action) => ipcRenderer.invoke(IPC.midiTest, action),
   getMidiStatus: () => ipcRenderer.invoke(IPC.midiStatus),
   onMidiStatus: subscribe<MidiStatus>(IPC.midiStatus),

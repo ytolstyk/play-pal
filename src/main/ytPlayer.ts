@@ -38,6 +38,7 @@ export class YtPlayer {
   private view: WebContentsView | null = null
   private bounds: Rect | null = null
   private videoId: string | null = null
+  private analysing = false
 
   constructor(private readonly window: () => BrowserWindow | null) {}
 
@@ -87,7 +88,13 @@ export class YtPlayer {
   }
 
   command(command: YtCommand): void {
+    if (command.cmd === 'analyse') this.analysing = command.value === 1
     this.view?.webContents.send(YT_PAGE.command, command)
+  }
+
+  /** Whether the visualizer wants frames; main owns this so it survives page loads. */
+  isAnalysing(): boolean {
+    return this.analysing
   }
 
   destroy(): void {
@@ -138,6 +145,10 @@ export class YtPlayer {
       console.warn(`[ytmusic] blocked navigation to ${url}`)
       e.preventDefault()
     }
+    // A new page starts without the analysis tap; replay what the visualizer wants.
+    wc.on('did-finish-load', () => {
+      if (this.analysing) wc.send(YT_PAGE.command, { cmd: 'analyse', value: 1 })
+    })
     wc.on('will-navigate', guard)
     wc.on('will-redirect', guard)
     wc.on('will-frame-navigate', (e) => guard(e, e.url))

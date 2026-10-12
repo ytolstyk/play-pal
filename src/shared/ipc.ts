@@ -11,6 +11,7 @@ export const IPC = {
   ytBounds: 'yt:bounds',
   ytCommand: 'yt:command',
   ytReturn: 'yt:return',
+  audioFrame: 'player:audio-frame',
   midiTest: 'midi:test',
   midiStatus: 'midi:status',
   midiReconnect: 'midi:reconnect'
@@ -22,5 +23,6 @@ export const IPC = {
  */
 export const YT_PAGE = {
   clock: 'yt:page-clock',
-  command: 'yt:page-command'
+  command: 'yt:page-command',
+  audio: 'yt:page-audio'
 } as const

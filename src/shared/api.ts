@@ -1,3 +1,4 @@
+import type { AudioFrame } from './audio'
 import type {
   ClockSample,
   Track,
@@ -41,6 +42,8 @@ export interface Api {
   ytCommand(command: YtCommand): void
   /** Navigates the YouTube Music view back to the armed track's page (the user may have wandered off). */
   ytReturn(): void
+  /** Spectrum/waveform frames of the YouTube Music track, while analysis is on (see the `analyse` command). */
+  onAudioFrame(cb: (f: AudioFrame) => void): () => void
   testAction(action: MidiAction): Promise<void>
   getMidiStatus(): Promise<MidiStatus>
   onMidiStatus(cb: (s: MidiStatus) => void): () => void

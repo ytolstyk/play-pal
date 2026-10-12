@@ -75,6 +75,10 @@ main { position: relative; overflow-y: auto; min-width: 0; }
 .title-input { font-size: 18px; font-weight: 600; background: transparent; border-color: transparent; padding: 4px 6px; margin-left: -6px; }
 .title-input:hover, .title-input:focus { border-color: var(--line); }
 .yt-slot { width: 100%; background: #000; border: 1px solid var(--line); border-radius: var(--radius); display: grid; place-items: center; }
+.viz-slot { display: block; overflow: hidden; background: radial-gradient(circle at 50% 120%, var(--accent-soft), #07080a 70%); }
+.viz-canvas { display: block; width: 100%; height: 100%; }
+.view-bar { display: flex; gap: 6px; flex-wrap: wrap; }
+.view-bar button { padding: 3px 10px; font-size: 12px; }
 .yt-resize { height: 10px; margin: -6px 0; cursor: row-resize; touch-action: none; position: relative; z-index: 1; display: grid; place-items: center; }
 .yt-resize::after { content: ''; width: 48px; height: 4px; border-radius: 2px; background: var(--line); transition: background .15s; }
 .yt-resize:hover::after, .yt-resize:focus-visible::after { background: var(--accent); }

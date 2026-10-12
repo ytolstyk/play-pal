@@ -3,9 +3,14 @@ import type { Cue, Track } from '../../../shared/types'
 import { DEFAULT_CUE_ACTION, sortedByTime } from '../../../shared/cues'
 import { formatTime } from '../../../shared/time'
 import { DEFAULT_VOLUME, MAX_TITLE } from '../../../shared/types'
+import { useAudioFeed } from '../hooks/useAudioFeed'
+import { loadStored, saveStored } from '../storage'
 import { usePlayback } from '../hooks/usePlayback'
+import { isVizKind, VISUALIZERS, type VizKind } from '../visualizers/draw'
 import { Wire } from './Circuit'
 import { CueList } from './CueList'
+import { Segmented } from './Segmented'
+import { Visualizer } from './Visualizer'
 import { TimeReadout } from './TimeReadout'
 import { Timeline } from './Timeline'
 import { StartPresetEditor } from './StartPresetEditor'
@@ -24,17 +29,24 @@ const RATES = [0.5, 0.75, 0.9, 1]
 const YT_BOUNDS_POLL_MS = 250
 const YT_HEIGHT = { min: 160, max: 900, default: 340, keyStep: 20, storageKey: 'ytSlotHeight' }
 
+type View = 'video' | 'visualizer'
+const VIEW_KEY = 'viewMode'
+const VIZ_KEY = 'visualizer'
+
+const VIEW_OPTIONS = [
+  { value: 'video', label: 'Video' },
+  { value: 'visualizer', label: 'Visualizer' }
+] as const
+const VIZ_OPTIONS = VISUALIZERS.map((v) => ({ value: v.kind, label: v.label }))
+const isView = (v: unknown): v is View => v === 'video' || v === 'visualizer'
+
 const clampYtHeight = (h: number): number => Math.min(YT_HEIGHT.max, Math.max(YT_HEIGHT.min, Math.round(h)))
 
-const loadYtHeight = (): number => {
-  try {
-    const n = Number(localStorage.getItem(YT_HEIGHT.storageKey))
-    if (n >= YT_HEIGHT.min && n <= YT_HEIGHT.max) return n
-  } catch {
-    // storage unavailable: use the default
-  }
-  return YT_HEIGHT.default
+const isStoredHeight = (v: unknown): v is string => {
+  const n = Number(v)
+  return typeof v === 'string' && n >= YT_HEIGHT.min && n <= YT_HEIGHT.max
 }
+const loadYtHeight = (): number => Number(loadStored(YT_HEIGHT.storageKey, isStoredHeight, String(YT_HEIGHT.default)))
 
 const isTypingTarget = (t: EventTarget | null): boolean =>
   t instanceof HTMLElement && ['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(t.tagName)
@@ -46,6 +58,12 @@ export function Player({ track, suspendVideo, onChange }: Props): React.JSX.Elem
   const [ytHeight, setYtHeight] = useState(loadYtHeight)
   const slotRef = useRef<HTMLDivElement>(null)
   const isYt = track.source.kind === 'ytmusic'
+  const [view, setView] = useState<View>(() => loadStored(VIEW_KEY, isView, 'video'))
+  const [viz, setViz] = useState<VizKind>(() => loadStored(VIZ_KEY, isVizKind, 'bars'))
+  // Local files have no picture, so they always show the visualizer; YouTube Music can swap either way.
+  // Hiding the video only hides its view: the page keeps playing underneath.
+  const showViz = !isYt || view === 'visualizer'
+  const feed = useAudioFeed(isYt ? 'yt' : 'file', audioRef, showViz, state.playing)
 
   // Dragging applies the volume live; it is saved on the track once, on release.
   const commitVolume = (): void => {
@@ -57,11 +75,7 @@ export function Player({ track, suspendVideo, onChange }: Props): React.JSX.Elem
 
   const changeYtHeight = (h: number): void => {
     setYtHeight(h)
-    try {
-      localStorage.setItem(YT_HEIGHT.storageKey, String(h))
-    } catch {
-      // not persisted; the size still applies for this session
-    }
+    saveStored(YT_HEIGHT.storageKey, String(h))
   }
 
   // Drag the divider under the video. Pointer capture keeps the drag alive outside the handle.
@@ -104,7 +118,7 @@ export function Player({ track, suspendVideo, onChange }: Props): React.JSX.Elem
   // The YouTube Music view is a native overlay; keep it glued to the slot's rectangle.
   useEffect(() => {
     const slot = slotRef.current
-    if (!isYt || suspendVideo || !slot) return
+    if (showViz || suspendVideo || !slot) return
     let last = ''
     const report = (): void => {
       const r = slot.getBoundingClientRect()
@@ -126,7 +140,7 @@ export function Player({ track, suspendVideo, onChange }: Props): React.JSX.Elem
       window.removeEventListener('resize', report)
       window.api.setYtBounds(null)
     }
-  }, [isYt, suspendVideo])
+  }, [showViz, suspendVideo])
 
   const addCue = useCallback(() => {
     onChange((t) => {
@@ -174,33 +188,56 @@ export function Player({ track, suspendVideo, onChange }: Props): React.JSX.Elem
         aria-label="Track title"
         onChange={(e) => onChange((t) => ({ ...t, title: e.target.value }))}
       />
-      {track.source.kind === 'file' ? (
-        <audio ref={audioRef} src={`ppfile://t/${track.id}`} preload="auto" />
-      ) : (
-        <>
-          <div className="yt-slot" ref={slotRef} style={{ height: ytHeight }}>
-            <p className="muted small">YouTube Music loads here. Sign in once and the session is remembered.</p>
-          </div>
-          <div
-            className="yt-resize"
-            role="separator"
-            aria-orientation="horizontal"
-            aria-label="Resize video view"
-            aria-valuemin={YT_HEIGHT.min}
-            aria-valuemax={YT_HEIGHT.max}
-            aria-valuenow={ytHeight}
-            tabIndex={0}
-            onPointerDown={startResize}
-            onDoubleClick={() => changeYtHeight(YT_HEIGHT.default)}
-            onKeyDown={(e) => {
-              const dir = e.key === 'ArrowDown' ? 1 : e.key === 'ArrowUp' ? -1 : 0
-              if (!dir) return
-              e.preventDefault()
-              changeYtHeight(clampYtHeight(ytHeight + dir * YT_HEIGHT.keyStep))
-            }}
-          />
-        </>
+      {isYt && (
+        <Segmented
+          label="Video or visualizer"
+          options={VIEW_OPTIONS}
+          value={view}
+          onChange={(v) => {
+            setView(v)
+            saveStored(VIEW_KEY, v)
+          }}
+        />
       )}
+      {showViz && (
+        <Segmented
+          label="Visualizer style"
+          options={VIZ_OPTIONS}
+          value={viz}
+          onChange={(v) => {
+            setViz(v)
+            saveStored(VIZ_KEY, v)
+          }}
+        />
+      )}
+      {!isYt && <audio ref={audioRef} src={`ppfile://t/${track.id}`} crossOrigin="anonymous" preload="auto" />}
+      {showViz ? (
+        <div className="yt-slot viz-slot" style={{ height: ytHeight }}>
+          <Visualizer feed={feed} kind={viz} playing={state.playing} />
+        </div>
+      ) : (
+        <div className="yt-slot" ref={slotRef} style={{ height: ytHeight }}>
+          <p className="muted small">YouTube Music loads here. Sign in once and the session is remembered.</p>
+        </div>
+      )}
+      <div
+        className="yt-resize"
+        role="separator"
+        aria-orientation="horizontal"
+        aria-label="Resize video view"
+        aria-valuemin={YT_HEIGHT.min}
+        aria-valuemax={YT_HEIGHT.max}
+        aria-valuenow={ytHeight}
+        tabIndex={0}
+        onPointerDown={startResize}
+        onDoubleClick={() => changeYtHeight(YT_HEIGHT.default)}
+        onKeyDown={(e) => {
+          const dir = e.key === 'ArrowDown' ? 1 : e.key === 'ArrowUp' ? -1 : 0
+          if (!dir) return
+          e.preventDefault()
+          changeYtHeight(clampYtHeight(ytHeight + dir * YT_HEIGHT.keyStep))
+        }}
+      />
       <Wire variant="a" />
       <div className="transport">
         <div className="transport-row">

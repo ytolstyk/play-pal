@@ -20,6 +20,7 @@ import { LibraryStore } from './store'
 import { YtPlayer } from './ytPlayer'
 import { IPC, YT_PAGE } from '../shared/ipc'
 import { clampInt } from '../shared/guards'
+import { AUDIO_FRAME_MS, readAudioFrame } from '../shared/audio'
 import { readClock, readRect, readYtCommand, readYtPageClock } from '../shared/payloads'
 import {
   AUDIO_EXTENSIONS,
@@ -41,6 +42,8 @@ const OFF_RETRY_MS = 250
 const PLAYBACK_PUSH_MS = 100
 /** A sample older than this was queued behind something slow; don't trust its age beyond it. */
 const MAX_SAMPLE_AGE_MS = 250
+/** Frames from the page arrive every ~33 ms; anything faster is not from our preload. */
+const MIN_AUDIO_PUSH_MS = AUDIO_FRAME_MS / 2
 const FILE_SCHEME = 'ppfile'
 const YT_ORIGIN = 'https://music.youtube.com'
 
@@ -101,7 +104,12 @@ function createWindow(): void {
     yt.destroy()
   })
   // A dead renderer can't report its clock; stop extrapolating at once instead of waiting for the watchdog.
-  win.webContents.on('render-process-gone', () => runner.halt())
+  // A reloaded renderer has no visualizer yet; stop the page's frame stream until it asks again.
+  win.webContents.on('did-start-loading', () => yt.command({ cmd: 'analyse', value: 0 }))
+  win.webContents.on('render-process-gone', () => {
+    runner.halt()
+    yt.command({ cmd: 'analyse', value: 0 }) // its visualizer is gone, so nothing wants frames
+  })
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   win.webContents.on('will-navigate', (e) => e.preventDefault())
   const devUrl = process.env.ELECTRON_RENDERER_URL
@@ -111,7 +119,7 @@ function createWindow(): void {
 
 /** Serves `ppfile://t/<track id>` for local-file tracks only; the renderer can't name arbitrary paths. */
 function registerFileProtocol(): void {
-  protocol.handle(FILE_SCHEME, (request) => {
+  protocol.handle(FILE_SCHEME, async (request) => {
     let id: string
     try {
       id = decodeURIComponent(new URL(request.url).pathname.slice(1))
@@ -120,10 +128,14 @@ function registerFileProtocol(): void {
     }
     const track = armed?.id === id ? armed : library.tracks.find((t) => t.id === id)
     if (!track || track.source.kind !== 'file') return new Response('not found', { status: 404 })
-    return net.fetch(pathToFileURL(track.source.path).toString(), {
+    const res = await net.fetch(pathToFileURL(track.source.path).toString(), {
       headers: request.headers,
       bypassCustomProtocolHandlers: true
     })
+    // The visualizer analyses the <audio> element; a cross-origin source with no CORS grant would read as silence.
+    const headers = new Headers(res.headers)
+    headers.set('Access-Control-Allow-Origin', '*')
+    return new Response(res.body, { status: res.status, statusText: res.statusText, headers })
   })
 }
 
@@ -159,6 +171,19 @@ function onYtClock(e: IpcMainEvent, raw: unknown): void {
     lastPlaybackPush = { at: now, playing: state.playing, rate: state.rate }
     pushToWindow(IPC.playback, state)
   }
+}
+
+let lastAudioPush = 0
+/** Spectrum frames from the YouTube Music page, relayed to the visualizer. */
+function onYtAudio(e: IpcMainEvent, raw: unknown): void {
+  const contents = yt.contents()
+  if (!yt.isAnalysing() || !contents || e.sender !== contents) return
+  const now = performance.now()
+  if (now - lastAudioPush < MIN_AUDIO_PUSH_MS) return
+  if (originOf(e.senderFrame?.url) !== YT_ORIGIN) return
+  lastAudioPush = now
+  const frame = readAudioFrame(raw)
+  if (frame) pushToWindow(IPC.audioFrame, frame)
 }
 
 function setKeepAwake(on: boolean): void {
@@ -253,6 +278,7 @@ function registerIpc(): void {
     if (trusted(e) && clock) runner.sample(clock, performance.now())
   })
   ipcMain.on(YT_PAGE.clock, onYtClock)
+  ipcMain.on(YT_PAGE.audio, onYtAudio)
   ipcMain.on(IPC.ytBounds, (e, raw: unknown) => trusted(e) && yt.setBounds(readRect(raw)))
   ipcMain.on(IPC.ytCommand, (e, raw: unknown) => {
     const command = readYtCommand(raw)

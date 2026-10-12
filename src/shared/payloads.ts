@@ -37,6 +37,7 @@ export function readYtCommand(raw: unknown): YtCommand | null {
   if (cmd === 'play' || cmd === 'pause') return { cmd }
   if ((cmd === 'seek' || cmd === 'rate') && isFiniteNumber(value) && value >= 0) return { cmd, value }
   if (cmd === 'volume' && isVolume(value)) return { cmd, value }
+  if (cmd === 'analyse' && (value === 0 || value === 1)) return { cmd, value }
   return null
 }
 

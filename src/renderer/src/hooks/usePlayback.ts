@@ -18,6 +18,8 @@ export interface Playback {
   /** True while the track's start preset is loading, before playback begins. */
   starting: boolean
   toggle(): void
+  /** Plays the track again from the beginning (sending the start preset, if any). */
+  restart(): void
   seek(t: number): void
   setRate(rate: number): void
 }
@@ -86,52 +88,65 @@ export function usePlayback(track: Track): Playback {
     }
   }, [isFile, track.id, apply])
 
+  /** The single file-vs-YouTube dispatch point for transport commands. */
+  const command = useCallback(
+    (c: { cmd: 'play' | 'pause' } | { cmd: 'seek' | 'rate'; value: number }): void => {
+      const audio = audioRef.current
+      if (!isFile) return window.api.ytCommand(c)
+      if (!audio) return
+      if (!('value' in c)) {
+        if (c.cmd === 'play') void audio.play().catch(() => undefined)
+        else audio.pause()
+      } else if (c.cmd === 'seek') audio.currentTime = c.value
+      else audio.playbackRate = c.value
+    },
+    [isFile]
+  )
+
+  /** Plays; from the start it first sends the track's start preset (a failed send still starts the song). */
+  const play = useCallback(
+    (fromStart: boolean, rewind = false): void => {
+      const begin = (): void => {
+        if (rewind) command({ cmd: 'seek', value: 0 })
+        command({ cmd: 'play' })
+      }
+      if (!hasStart || !fromStart) return begin()
+      // Main sends the preset and resolves after its wait.
+      startingRef.current = true
+      setStarting(true)
+      void window.api.sendStartPreset(track.id).catch(() => false).then(() => {
+        startingRef.current = false
+        if (!aliveRef.current) return
+        setStarting(false)
+        begin()
+      })
+    },
+    [hasStart, track.id, command]
+  )
+
   const toggle = useCallback(() => {
     if (startingRef.current) return
     const { playing, t, duration } = stateRef.current
-    const audio = audioRef.current
-    const play = (): void => {
-      if (isFile) void audio?.play().catch(() => undefined)
-      else window.api.ytCommand({ cmd: 'play' })
-    }
-    if (playing) {
-      if (isFile) audio?.pause()
-      else window.api.ytCommand({ cmd: 'pause' })
-      return
-    }
-    const fromStart = t < START_WINDOW_S || (duration > 0 && t >= duration - ENDED_EPSILON_S)
-    if (!hasStart || !fromStart) return play()
-    // Main sends the preset and resolves after its wait; a failed send still starts the song.
-    startingRef.current = true
-    setStarting(true)
-    void window.api.sendStartPreset(track.id).catch(() => false).then(() => {
-      startingRef.current = false
-      if (!aliveRef.current) return
-      setStarting(false)
-      play()
-    })
-  }, [isFile, hasStart, track.id])
+    if (playing) return command({ cmd: 'pause' })
+    play(t < START_WINDOW_S || (duration > 0 && t >= duration - ENDED_EPSILON_S))
+  }, [command, play])
+
+  const restart = useCallback(() => {
+    if (startingRef.current) return
+    // With a start preset, stop now and rewind only once it has been sent, so a cue at 0 can't fire ahead of it.
+    if (hasStart) command({ cmd: 'pause' })
+    play(true, true)
+  }, [hasStart, command, play])
 
   const seek = useCallback(
     (t: number) => {
       if (startingRef.current) return // the start preset is for the beginning; don't play from elsewhere
-      const audio = audioRef.current
-      if (isFile) {
-        if (audio) audio.currentTime = t
-      } else window.api.ytCommand({ cmd: 'seek', value: t })
+      command({ cmd: 'seek', value: t })
     },
-    [isFile]
+    [command]
   )
 
-  const setRate = useCallback(
-    (rate: number) => {
-      const audio = audioRef.current
-      if (isFile) {
-        if (audio) audio.playbackRate = rate
-      } else window.api.ytCommand({ cmd: 'rate', value: rate })
-    },
-    [isFile]
-  )
+  const setRate = useCallback((rate: number) => command({ cmd: 'rate', value: rate }), [command])
 
-  return { state, timeRef, audioRef, starting, toggle, seek, setRate }
+  return { state, timeRef, audioRef, starting, toggle, restart, seek, setRate }
 }

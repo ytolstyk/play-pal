@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CueRunner } from '../src/main/cueRunner'
+import { CueRunner, START_CUE_ID } from '../src/main/cueRunner'
 import type { ClockSample, Cue } from '../src/shared/types'
 
 const action = { type: 'cc', channel: 1, number: 20, value: 127 } as const
@@ -270,5 +270,42 @@ describe('CueRunner', () => {
     runner.setCues([cue('a', 10)])
     runner.tick(1100)
     expect(fired).toEqual(['a'])
+  })
+
+  describe('start preset', () => {
+    const startAction = { type: 'cc', channel: 1, number: 1, value: 1 } as const
+    const withStart = () => {
+      const fired: string[] = []
+      const runner = new CueRunner((c) => {
+        fired.push(c.id)
+        return true
+      })
+      runner.select('T', [cue('a', 10)], startAction)
+      return { runner, fired }
+    }
+
+    it('fires when rewinding to before the first cue', () => {
+      const { runner, fired } = withStart()
+      runner.sample(sample(20), 0)
+      expect(fired).toEqual(['a'])
+      runner.sample(sample(3), 1000)
+      expect(fired).toEqual(['a', START_CUE_ID])
+    })
+
+    it('does not resend while seeking around before the first cue', () => {
+      const { runner, fired } = withStart()
+      runner.sample(sample(20), 0)
+      runner.sample(sample(3), 1000)
+      runner.sample(sample(1), 2000)
+      expect(fired).toEqual(['a', START_CUE_ID])
+    })
+
+    it('does not fire on the first sample or right after the start preset was sent', () => {
+      const { runner, fired } = withStart()
+      runner.sample(sample(0, false), 0)
+      runner.presetReplaced()
+      runner.sample(sample(0), 100)
+      expect(fired).toEqual([])
+    })
   })
 })

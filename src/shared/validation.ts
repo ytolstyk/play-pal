@@ -1,5 +1,5 @@
 import { sortedByTime } from './cues'
-import { isFiniteNumber, isObject } from './guards'
+import { isFiniteNumber, isObject, isVolume } from './guards'
 import { isVideoId } from './url'
 import {
   AUDIO_EXTENSIONS,
@@ -79,6 +79,7 @@ export function validateTrack(t: unknown): string[] {
   if (typeof t.title !== 'string' || t.title.length > MAX_TITLE) errors.push('invalid title')
   errors.push(...validateSource(t.source))
   if (t.start !== undefined) errors.push(...validateStart(t.start))
+  if (t.volume !== undefined && !isVolume(t.volume)) errors.push('volume must be 0-1')
   if (!Array.isArray(t.cues)) return [...errors, 'cues must be a list']
   if (t.cues.length > MAX_CUES) return [...errors, 'too many cues']
   t.cues.forEach((c, i) => errors.push(...validateCue(c).map((m) => `cue #${i + 1}: ${m}`)))
@@ -112,7 +113,8 @@ const pickTrack = (t: Track): Track => ({
   title: t.title,
   source: t.source.kind === 'file' ? { kind: 'file', path: t.source.path } : { kind: 'ytmusic', videoId: t.source.videoId },
   cues: sortedByTime(t.cues.map(pickCue)),
-  ...(t.start ? { start: pickStart(t.start) } : {})
+  ...(t.start ? { start: pickStart(t.start) } : {}),
+  ...(t.volume !== undefined ? { volume: t.volume } : {})
 })
 
 /** Re-picks known fields (nothing extra from the renderer is persisted) and sorts cues by time. Validate first. */

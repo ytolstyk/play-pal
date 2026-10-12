@@ -51,5 +51,8 @@ ipcRenderer.on(COMMAND, (_e, command: { cmd?: string; value?: number }) => {
     case 'rate':
       if (typeof command.value === 'number') v.playbackRate = Math.min(MAX_RATE, Math.max(MIN_RATE, command.value))
       break
+    case 'volume':
+      if (typeof command.value === 'number' && Number.isFinite(command.value)) v.volume = Math.min(1, Math.max(0, command.value))
+      break
   }
 })

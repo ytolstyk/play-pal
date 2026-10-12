@@ -35,6 +35,8 @@ export interface Playback {
   restart(): void
   seek(t: number): void
   setRate(rate: number): void
+  /** Applies 0-1 immediately; the caller persists it on the track (on release) so a drag doesn't save per step. */
+  setVolume(volume: number): void
 }
 
 /**
@@ -121,7 +123,7 @@ export function usePlayback(track: Track): Playback {
 
   /** The single file-vs-YouTube dispatch point for transport commands. */
   const command = useCallback(
-    (c: { cmd: 'play' | 'pause' } | { cmd: 'seek' | 'rate'; value: number }): void => {
+    (c: { cmd: 'play' | 'pause' } | { cmd: 'seek' | 'rate' | 'volume'; value: number }): void => {
       const audio = audioRef.current
       if (!isFile) return window.api.ytCommand(c)
       if (!audio) return
@@ -129,7 +131,8 @@ export function usePlayback(track: Track): Playback {
         if (c.cmd === 'play') void audio.play().catch(() => undefined)
         else audio.pause()
       } else if (c.cmd === 'seek') audio.currentTime = c.value
-      else audio.playbackRate = c.value
+      else if (c.cmd === 'rate') audio.playbackRate = c.value
+      else audio.volume = c.value
     },
     [isFile]
   )
@@ -178,6 +181,16 @@ export function usePlayback(track: Track): Playback {
   )
 
   const setRate = useCallback((rate: number) => command({ cmd: 'rate', value: rate }), [command])
+  const setVolume = useCallback((volume: number) => command({ cmd: 'volume', value: volume }), [command])
 
-  return { state, clock, timeRef, audioRef, starting, toggle, restart, seek, setRate }
+  // Each track plays at its saved volume. The YouTube page only has a <video> once it has loaded
+  // (and may reset it on a track change), so re-apply when its duration becomes known.
+  // Nothing saved means leave the player alone (YouTube Music keeps its own level).
+  const volume = track.volume
+  const loaded = state.duration > 0
+  useEffect(() => {
+    if (volume !== undefined) command({ cmd: 'volume', value: volume })
+  }, [command, volume, track.id, loaded])
+
+  return { state, clock, timeRef, audioRef, starting, toggle, restart, seek, setRate, setVolume }
 }

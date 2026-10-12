@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Cue, Track } from '../../../shared/types'
 import { DEFAULT_CUE_ACTION, sortedByTime } from '../../../shared/cues'
 import { formatTime } from '../../../shared/time'
-import { MAX_TITLE } from '../../../shared/types'
+import { DEFAULT_VOLUME, MAX_TITLE } from '../../../shared/types'
 import { usePlayback } from '../hooks/usePlayback'
 import { Wire } from './Circuit'
 import { CueList } from './CueList'
@@ -40,11 +40,20 @@ const isTypingTarget = (t: EventTarget | null): boolean =>
   t instanceof HTMLElement && ['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(t.tagName)
 
 export function Player({ track, suspendVideo, onChange }: Props): React.JSX.Element {
-  const { state, clock, timeRef, audioRef, starting, toggle, restart, seek, setRate } = usePlayback(track)
+  const { state, clock, timeRef, audioRef, starting, toggle, restart, seek, setRate, setVolume } = usePlayback(track)
   const [firedId, setFiredId] = useState<string | null>(null)
+  const [draftVolume, setDraftVolume] = useState<number | null>(null)
   const [ytHeight, setYtHeight] = useState(loadYtHeight)
   const slotRef = useRef<HTMLDivElement>(null)
   const isYt = track.source.kind === 'ytmusic'
+
+  // Dragging applies the volume live; it is saved on the track once, on release.
+  const commitVolume = (): void => {
+    if (draftVolume === null) return
+    const volume = draftVolume
+    setDraftVolume(null)
+    onChange((t) => ({ ...t, volume }))
+  }
 
   const changeYtHeight = (h: number): void => {
     setYtHeight(h)
@@ -213,6 +222,24 @@ export function Player({ track, suspendVideo, onChange }: Props): React.JSX.Elem
               </option>
             ))}
           </select>
+        </label>
+        <label className="muted small">
+          Volume
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.01}
+            value={draftVolume ?? track.volume ?? DEFAULT_VOLUME}
+            onChange={(e) => {
+              const volume = Number(e.target.value)
+              setDraftVolume(volume)
+              setVolume(volume)
+            }}
+            onPointerUp={commitVolume}
+            onKeyUp={commitVolume}
+            onBlur={commitVolume}
+          />
         </label>
         <button onClick={addCue}>Add cue here (M)</button>
         {isYt && (

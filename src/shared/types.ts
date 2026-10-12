@@ -35,6 +35,8 @@ export interface Track {
   source: TrackSource
   cues: Cue[]
   start?: StartPreset
+  /** Playback volume, 0-1. Absent means full. */
+  volume?: number
 }
 
 export interface Library {
@@ -87,7 +89,9 @@ export type YtCommand =
   | { cmd: 'pause' }
   | { cmd: 'seek'; value: number }
   | { cmd: 'rate'; value: number }
+  | { cmd: 'volume'; value: number }
 
+export const DEFAULT_VOLUME = 1
 export const PORT_BASE_NAME = 'Play-Pal'
 export const NOTE_OFF_DELAY_MS = 100
 export const MAX_LEAD_MS = 1000

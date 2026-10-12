@@ -1,5 +1,5 @@
 import { sortedByTime } from '../shared/cues'
-import type { ClockSample, Cue } from '../shared/types'
+import type { ClockSample, Cue, MidiAction } from '../shared/types'
 
 /** A sample further than this from where we expected the player to be means the user seeked or looped. */
 const SEEK_TOLERANCE_S = 0.3
@@ -12,6 +12,9 @@ const REFIRE_MIN_MS = 250
 const STALE_MS = 2000
 /** How often a cue whose MIDI failed (port down) is retried. */
 const RETRY_MS = 100
+
+/** Id of the pseudo-cue that stands for the track's start preset. */
+export const START_CUE_ID = 'start-preset'
 
 interface Base {
   t: number
@@ -42,11 +45,13 @@ export class CueRunner {
   /** A cue that crossed but couldn't be sent yet; retried until it goes out or something newer replaces it. */
   private pending: { cue: Cue; lastTry: number } | null = null
   private lastEmitAt = -Infinity
+  /** The track's start preset, resent when the user rewinds to before the first cue. */
+  private start: Cue | null = null
 
   /** `fire` reports whether the MIDI actually went out; a failed send leaves the cue unfired. */
   constructor(private readonly fire: (cue: Cue) => boolean) {}
 
-  select(trackId: string | null, cues: Cue[]): void {
+  select(trackId: string | null, cues: Cue[], start: MidiAction | null = null): void {
     this.trackId = trackId
     this.cues = sortedByTime(cues)
     this.base = null
@@ -54,10 +59,20 @@ export class CueRunner {
     this.activeId = null
     this.pending = null
     this.lastEmitAt = -Infinity
+    this.start = this.startCue(start)
+  }
+
+  private startCue(action: MidiAction | null): Cue | null {
+    return action ? { id: START_CUE_ID, time: 0, label: 'Start preset', action } : null
   }
 
   /** Cues edited while a track is open; position and "already fired" state are kept. */
-  setCues(cues: Cue[]): void {
+  setCues(cues: Cue[], start: MidiAction | null = null): void {
+    // An edited or removed start preset is no longer the loaded one: the next rewind must resend.
+    if (this.activeId === START_CUE_ID && JSON.stringify(start) !== JSON.stringify(this.start?.action ?? null)) {
+      this.activeId = null
+    }
+    this.start = this.startCue(start)
     const loaded = this.cues.find((c) => c.id === this.activeId)
     this.cues = sortedByTime(cues)
     // The loaded preset was edited or deleted: a later seek into its section must resend, not be deduped.
@@ -65,18 +80,18 @@ export class CueRunner {
     if (loaded && JSON.stringify(now?.action) !== JSON.stringify(loaded.action)) this.activeId = null
     const p = this.pending
     if (p) {
-      const edited = this.cues.find((c) => c.id === p.cue.id)
+      const edited = p.cue.id === START_CUE_ID ? this.start : this.cues.find((c) => c.id === p.cue.id)
       if (!edited) this.pending = null
       else p.cue = edited
     }
   }
 
   /**
-   * Something outside the cues (the start preset) replaced the loaded preset. Forget it, and treat the
+   * Something outside the cues (the start preset) replaced the loaded preset. Forget the cue (the start preset is now the loaded one), and treat the
    * next sample as a fresh start so a cue at the very beginning is fired once playback begins.
    */
   presetReplaced(): void {
-    this.activeId = null
+    this.activeId = this.start ? START_CUE_ID : null
     this.base = null
     this.pending = null
   }
@@ -95,7 +110,11 @@ export class CueRunner {
     this.cursor = s.t + this.leadS
     this.pending = null // a retry from before the jump would load the wrong section's preset
     const active = this.lastCueAtOrBefore(this.cursor)
-    if (!active) return
+    if (!active) {
+      // Rewound to before the first cue: the song's opening preset applies again.
+      if (rewound && this.start && this.activeId !== START_CUE_ID) this.emit(this.start, now)
+      return
+    }
     // The same preset is already loaded; don't resend it on every seek within one section,
     // unless the seek landed right at its start (restarting that section).
     const restart = rewound && this.cursor - active.time <= JUST_PAST_CUE_S && now - this.lastEmitAt >= REFIRE_MIN_MS

@@ -2,6 +2,8 @@
 
 Play along with a track while the app switches your Neural DSP presets for you.
 
+![Play-Pal with a track, its cue timeline and cue list](docs/screenshot.png)
+
 1. Add a track: **+ Local file**, or paste a YouTube Music link (sign in once in the embedded page; the session is remembered).
 2. Play it and press **M** (or "Add cue here") where a preset should change. Set the MIDI CC/Note each cue sends. **Test** sends it now.
 3. Next time, open the track from the list and hit Play. Cues fire on their own, also after seeking or looping.

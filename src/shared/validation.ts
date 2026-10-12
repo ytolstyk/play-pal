@@ -1,4 +1,4 @@
-import { sortedByTime } from './cues'
+import { isCueColor, sortedByTime } from './cues'
 import { isFiniteNumber, isObject, isVolume } from './guards'
 import { isVideoId } from './url'
 import {
@@ -50,6 +50,7 @@ function validateCue(c: unknown): string[] {
     errors.push('cue time out of range')
   }
   if (typeof c.label !== 'string' || c.label.length > MAX_LABEL) errors.push('invalid cue label')
+  if (c.color !== undefined && !isCueColor(c.color)) errors.push('invalid cue color')
   errors.push(...validateAction(c.action))
   return errors
 }
@@ -107,7 +108,9 @@ const pickAction = (a: MidiAction): MidiAction => ({
   value: a.value
 })
 const pickStart = (s: StartPreset): StartPreset => ({ action: pickAction(s.action), waitMs: s.waitMs })
-const pickCue = (c: Cue): Cue => ({ id: c.id, time: c.time, label: c.label, action: pickAction(c.action) })
+const pickCue = (c: Cue): Cue => ({ id: c.id, time: c.time, label: c.label, action: pickAction(c.action),
+  ...(isCueColor(c.color) ? { color: c.color } : {})
+})
 const pickTrack = (t: Track): Track => ({
   id: t.id,
   title: t.title,

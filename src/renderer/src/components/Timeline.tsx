@@ -1,5 +1,6 @@
-import { memo, useRef, useState } from 'react'
+import { memo, type CSSProperties, useMemo, useRef, useState } from 'react'
 import { useClockTime, type Clock } from '../hooks/usePlayback'
+import { sortedByTime } from '../../../shared/cues'
 import type { Cue } from '../../../shared/types'
 import { formatTime } from '../../../shared/time'
 
@@ -49,7 +50,9 @@ export const Timeline = memo(function Timeline({ clock, duration, cues, firedId,
     scrubPointer.current = null
     setScrubT(null)
   }
-  const pct = (x: number): string => `${duration > 0 ? Math.min(100, (x / duration) * 100) : 0}%`
+  const segments = useMemo(() => sortedByTime(cues), [cues])
+  const frac = (x: number): number => (duration > 0 ? Math.min(1, Math.max(0, x / duration)) : 0)
+  const pct = (x: number): string => `${frac(x) * 100}%`
 
   return (
     <div
@@ -65,14 +68,23 @@ export const Timeline = memo(function Timeline({ clock, duration, cues, firedId,
       onPointerCancel={scrubCancel}
       onLostPointerCapture={scrubCancel}
     >
-      <div className="played" style={{ transform: `scaleX(${duration > 0 ? Math.min(1, t / duration) : 0})` }} />
+      {segments.map((c, i) =>
+        c.color ? (
+          <div
+            key={c.id}
+            className="segment"
+            style={{ left: pct(c.time), right: `${(1 - frac(segments[i + 1]?.time ?? duration)) * 100}%`, background: c.color }}
+          />
+        ) : null
+      )}
+      <div className="played" style={{ transform: `scaleX(${frac(t)})` }} />
       {cues.map((c) => (
-        <div key={c.id} className={c.id === firedId ? 'marker fired' : 'marker'} style={{ left: pct(c.time) }} title={c.label} />
+        <div key={c.id} className={c.id === firedId ? 'marker fired' : 'marker'} style={{ left: pct(c.time), ...(c.color ? ({ '--cue': c.color } as CSSProperties) : {}) }} title={c.label} />
       ))}
       {scrubT !== null && (
         <>
           <div className="scrub-line" style={{ left: pct(scrubT) }} />
-          <div className="scrub-time mono" style={{ left: `clamp(32px, ${pct(scrubT)}, calc(100% - 32px))` }}>
+          <div className="scrub-time mono" style={{ left: `clamp(34px, ${pct(scrubT)}, calc(100% - 34px))` }}>
             {formatTime(scrubT)}
           </div>
         </>

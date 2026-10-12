@@ -17,6 +17,8 @@ export interface Cue {
   time: number
   label: string
   action: MidiAction
+  /** One of CUE_COLORS (#rrggbb). Absent means the theme accent. */
+  color?: string
 }
 
 export type TrackSource =

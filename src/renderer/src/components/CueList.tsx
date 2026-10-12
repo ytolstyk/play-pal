@@ -1,6 +1,6 @@
-import { memo } from 'react'
+import { memo, type CSSProperties } from 'react'
 import type { Cue } from '../../../shared/types'
-import { sortedByTime } from '../../../shared/cues'
+import { CUE_COLORS, sortedByTime } from '../../../shared/cues'
 import { formatTime, parseTime } from '../../../shared/time'
 import { MAX_LABEL } from '../../../shared/types'
 import { ActionFields } from './ActionFields'
@@ -40,7 +40,11 @@ function CueListImpl({ cues, firedId, onChange, onDelete, onSeek }: Props): Reac
   return (
     <ul className="cues">
       {sorted.map((c) => (
-        <li key={c.id} className={c.id === firedId ? 'fired' : undefined}>
+        <li
+          key={c.id}
+          className={[c.id === firedId && 'fired', c.color && 'colored'].filter(Boolean).join(' ') || undefined}
+          style={c.color ? ({ '--cue': c.color } as CSSProperties) : undefined}
+        >
           <button className="ghost small" title="Jump here" onClick={() => onSeek(c.time)}>
             ▶
           </button>
@@ -53,6 +57,19 @@ function CueListImpl({ cues, firedId, onChange, onDelete, onSeek }: Props): Reac
             aria-label="Cue label"
             onChange={(e) => onChange(c.id, { label: e.target.value })}
           />
+          <div className="swatches" role="group" aria-label="Cue color">
+            {CUE_COLORS.map((col) => (
+              <button
+                key={col.hex}
+                aria-pressed={c.color === col.hex}
+                aria-label={col.name}
+                title={col.name}
+                className={c.color === col.hex ? 'swatch on' : 'swatch'}
+                style={{ background: col.hex }}
+                onClick={() => onChange(c.id, { color: c.color === col.hex ? undefined : col.hex })}
+              />
+            ))}
+          </div>
           <ActionFields action={c.action} onChange={(action) => onChange(c.id, { action })} />
           <button className="ghost small" aria-label="Delete cue" onClick={() => onDelete(c.id)}>
             ✕

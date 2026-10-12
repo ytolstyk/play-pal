@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type RefObject } from 'react'
 import type { PlaybackState, Track } from '../../../shared/types'
 
 const IDLE: PlaybackState = { t: 0, duration: 0, playing: false, rate: 1 }
@@ -10,8 +10,21 @@ const START_WINDOW_S = 1
 const ENDED_EPSILON_S = 0.1
 const AUDIO_EVENTS: string[] = ['play', 'pause', 'seeking', 'seeked', 'ratechange', 'loadedmetadata', 'durationchange', 'ended']
 
+/** Everything but the position: changes rarely, so it can live in React state. */
+export type Transport = Omit<PlaybackState, 't'>
+
+/** The playback position as an external store, so only components that show it re-render at clock rate. */
+export interface Clock {
+  subscribe(listener: () => void): () => void
+  get(): number
+}
+
+/** Current playback position; re-renders the calling component on every clock update. */
+export const useClockTime = (clock: Clock): number => useSyncExternalStore(clock.subscribe, clock.get)
+
 export interface Playback {
-  state: PlaybackState
+  state: Transport
+  clock: Clock
   /** Latest position without re-rendering, for event handlers. */
   timeRef: RefObject<number>
   audioRef: RefObject<HTMLAudioElement | null>
@@ -32,7 +45,7 @@ export interface Playback {
 export function usePlayback(track: Track): Playback {
   const isFile = track.source.kind === 'file'
   const audioRef = useRef<HTMLAudioElement | null>(null)
-  const [state, setState] = useState<PlaybackState>(IDLE)
+  const [state, setState] = useState<Transport>(IDLE)
   const timeRef = useRef(0)
   const stateRef = useRef(IDLE)
   const [starting, setStarting] = useState(false)
@@ -47,10 +60,28 @@ export function usePlayback(track: Track): Playback {
     }
   }, [])
 
+  const listeners = useRef(new Set<() => void>())
+  const clock = useMemo<Clock>(
+    () => ({
+      subscribe: (l) => {
+        listeners.current.add(l)
+        return () => void listeners.current.delete(l)
+      },
+      get: () => timeRef.current
+    }),
+    []
+  )
+
   const apply = useCallback((s: PlaybackState) => {
     stateRef.current = s
     timeRef.current = s.t
-    setState(s)
+    // Position goes to the clock subscribers; React state changes only with the transport.
+    setState((prev) =>
+      prev.duration === s.duration && prev.playing === s.playing && prev.rate === s.rate
+        ? prev
+        : { duration: s.duration, playing: s.playing, rate: s.rate }
+    )
+    for (const l of listeners.current) l()
   }, [])
 
   useEffect(() => {
@@ -148,5 +179,5 @@ export function usePlayback(track: Track): Playback {
 
   const setRate = useCallback((rate: number) => command({ cmd: 'rate', value: rate }), [command])
 
-  return { state, timeRef, audioRef, starting, toggle, restart, seek, setRate }
+  return { state, clock, timeRef, audioRef, starting, toggle, restart, seek, setRate }
 }

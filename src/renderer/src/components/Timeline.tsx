@@ -1,9 +1,10 @@
 import { memo, useRef, useState } from 'react'
+import { useClockTime, type Clock } from '../hooks/usePlayback'
 import type { Cue } from '../../../shared/types'
 import { formatTime } from '../../../shared/time'
 
 interface Props {
-  t: number
+  clock: Clock
   duration: number
   cues: Cue[]
   firedId: string | null
@@ -14,7 +15,8 @@ interface Props {
  * Seek bar. Press-drag-release shows the target time while dragging and seeks on release. The drag
  * state lives here so pointer moves re-render only this component, not the whole player.
  */
-export const Timeline = memo(function Timeline({ t, duration, cues, firedId, onSeek }: Props): React.JSX.Element {
+export const Timeline = memo(function Timeline({ clock, duration, cues, firedId, onSeek }: Props): React.JSX.Element {
+  const t = useClockTime(clock)
   const [scrubT, setScrubT] = useState<number | null>(null)
   // The active pointer is the source of truth; scrubT only drives rendering.
   const scrubPointer = useRef<number | null>(null)

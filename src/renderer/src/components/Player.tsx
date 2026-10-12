@@ -6,6 +6,7 @@ import { MAX_TITLE } from '../../../shared/types'
 import { usePlayback } from '../hooks/usePlayback'
 import { Wire } from './Circuit'
 import { CueList } from './CueList'
+import { TimeReadout } from './TimeReadout'
 import { Timeline } from './Timeline'
 import { StartPresetEditor } from './StartPresetEditor'
 
@@ -39,7 +40,7 @@ const isTypingTarget = (t: EventTarget | null): boolean =>
   t instanceof HTMLElement && ['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(t.tagName)
 
 export function Player({ track, suspendVideo, onChange }: Props): React.JSX.Element {
-  const { state, timeRef, audioRef, starting, toggle, restart, seek, setRate } = usePlayback(track)
+  const { state, clock, timeRef, audioRef, starting, toggle, restart, seek, setRate } = usePlayback(track)
   const [firedId, setFiredId] = useState<string | null>(null)
   const [ytHeight, setYtHeight] = useState(loadYtHeight)
   const slotRef = useRef<HTMLDivElement>(null)
@@ -201,7 +202,7 @@ export function Player({ track, suspendVideo, onChange }: Props): React.JSX.Elem
           Restart
         </button>
         <span className="mono readout">
-          {formatTime(state.t)} / {formatTime(duration)}
+          <TimeReadout clock={clock} /> / {formatTime(duration)}
         </span>
         <label className="muted small">
           Speed
@@ -223,7 +224,7 @@ export function Player({ track, suspendVideo, onChange }: Props): React.JSX.Elem
         )}
       </div>
       <Wire variant="b" />
-      <Timeline t={state.t} duration={duration} cues={track.cues} firedId={firedId} onSeek={seek} />
+      <Timeline clock={clock} duration={duration} cues={track.cues} firedId={firedId} onSeek={seek} />
       <Wire variant="c" />
       <CueList cues={track.cues} firedId={firedId} onChange={changeCue} onDelete={deleteCue} onSeek={seek} />
     </section>

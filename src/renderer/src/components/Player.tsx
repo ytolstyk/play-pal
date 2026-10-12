@@ -202,57 +202,61 @@ export function Player({ track, suspendVideo, onChange }: Props): React.JSX.Elem
         </>
       )}
       <Wire variant="a" />
-      <StartPresetEditor start={track.start} onChange={(start) => onChange((t) => ({ ...t, start }))} />
       <div className="transport">
-        <button className="primary" disabled={starting} onClick={toggle}>
-          {starting ? 'Loading…' : state.playing ? 'Pause' : 'Play'}
-        </button>
-        <button disabled={starting} onClick={restart} title="Play from the beginning">
-          Restart
-        </button>
-        <span className="mono readout">
-          <TimeReadout clock={clock} /> / {formatTime(duration)}
-        </span>
-        <label className="muted small">
-          Speed
-          <select value={state.rate} onChange={(e) => setRate(Number(e.target.value))}>
-            {RATES.map((r) => (
-              <option key={r} value={r}>
-                {r}×
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="muted small">
-          Volume
-          <input
-            type="range"
-            min={0}
-            max={1}
-            step={0.01}
-            value={draftVolume ?? track.volume ?? DEFAULT_VOLUME}
-            onChange={(e) => {
-              const volume = Number(e.target.value)
-              setDraftVolume(volume)
-              setVolume(volume)
-            }}
-            onPointerUp={commitVolume}
-            onKeyUp={commitVolume}
-            onBlur={commitVolume}
-          />
-        </label>
-        <button onClick={addCue}>Add cue here (M)</button>
-        {isYt && (
-          <>
-            <button onClick={() => window.api.ytReturn()} title="Navigate the video view back to this track">
-              Back to track
-            </button>
-          </>
-        )}
+        <div className="transport-row">
+          <button className="primary" disabled={starting} onClick={toggle}>
+            {starting ? 'Loading…' : state.playing ? 'Pause' : 'Play'}
+          </button>
+          <button disabled={starting} onClick={restart} title="Play from the beginning">
+            Restart
+          </button>
+          <span className="mono readout">
+            <TimeReadout clock={clock} /> / {formatTime(duration)}
+          </span>
+          <button onClick={addCue}>Add cue here (M)</button>
+          {isYt && (
+            <>
+              <button onClick={() => window.api.ytReturn()} title="Navigate the video view back to this track">
+                Back to track
+              </button>
+            </>
+          )}
+        </div>
+        <div className="transport-row">
+          <label className="muted small">
+            Speed
+            <select value={state.rate} onChange={(e) => setRate(Number(e.target.value))}>
+              {RATES.map((r) => (
+                <option key={r} value={r}>
+                  {r}×
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="muted small">
+            Volume
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.01}
+              value={draftVolume ?? track.volume ?? DEFAULT_VOLUME}
+              onChange={(e) => {
+                const volume = Number(e.target.value)
+                setDraftVolume(volume)
+                setVolume(volume)
+              }}
+              onPointerUp={commitVolume}
+              onKeyUp={commitVolume}
+              onBlur={commitVolume}
+            />
+          </label>
+        </div>
       </div>
       <Wire variant="b" />
       <Timeline clock={clock} duration={duration} cues={track.cues} firedId={firedId} onSeek={seek} />
       <Wire variant="c" />
+      <StartPresetEditor start={track.start} onChange={(start) => onChange((t) => ({ ...t, start }))} />
       <CueList cues={track.cues} firedId={firedId} onChange={changeCue} onDelete={deleteCue} onSeek={seek} />
     </section>
   )

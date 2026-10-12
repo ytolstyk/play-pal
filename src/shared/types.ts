@@ -94,6 +94,8 @@ export type YtCommand =
   | { cmd: 'volume'; value: number }
   /** Stop holding the page's volume at the last one set (a track with no saved volume keeps YouTube's own level). */
   | { cmd: 'release-volume' }
+  /** 1 pauses any autoplay the page starts before the user touches it, so the start preset can go out first; main sends it. */
+  | { cmd: 'hold'; value: 0 | 1 }
   /** 1 starts streaming analyser frames from the page, 0 stops. */
   | { cmd: 'analyse'; value: 0 | 1 }
 

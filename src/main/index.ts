@@ -216,7 +216,7 @@ function armTrack(raw: unknown): void {
     return
   }
   runner.select(track.id, track.cues, track.start?.action ?? null)
-  if (track.source.kind === 'ytmusic') yt.load(track.source.videoId)
+  if (track.source.kind === 'ytmusic') yt.load(track.source.videoId, track.start !== undefined)
   else yt.unload()
   setKeepAwake(true)
 }

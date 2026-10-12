@@ -39,6 +39,8 @@ export class YtPlayer {
   private bounds: Rect | null = null
   private videoId: string | null = null
   private analysing = false
+  /** The page must not start playing by itself (the track's start preset goes out first); cleared by the first play command. */
+  private holding = false
 
   constructor(private readonly window: () => BrowserWindow | null) {}
 
@@ -47,10 +49,11 @@ export class YtPlayer {
     return this.view?.webContents ?? null
   }
 
-  load(videoId: string): void {
+  load(videoId: string, hold = false): void {
     if (this.videoId === videoId) return
     const view = this.ensureView()
     if (!view) return
+    this.holding = hold
     this.videoId = videoId
     this.applyBounds()
     this.navigate(view, videoId)
@@ -59,6 +62,7 @@ export class YtPlayer {
   /** Back to the track's own page after the user navigated elsewhere inside the view. */
   returnToTrack(): void {
     if (!this.videoId || !this.view) return
+    this.holding = false // the user is steering the view now; don't pause what they play
     // Already on the track's page: reloading would interrupt playback for nothing.
     try {
       const here = new URL(this.view.webContents.getURL())
@@ -77,6 +81,7 @@ export class YtPlayer {
   /** Stops the audio (a hidden page keeps playing) and hides the view. */
   unload(): void {
     this.videoId = null
+    this.holding = false
     if (!this.view) return
     void this.view.webContents.loadURL('about:blank').catch(() => undefined)
     this.applyBounds()
@@ -89,6 +94,10 @@ export class YtPlayer {
 
   command(command: YtCommand): void {
     if (command.cmd === 'analyse') this.analysing = command.value === 1
+    if (command.cmd === 'play' && this.holding) {
+      this.holding = false
+      this.view?.webContents.send(YT_PAGE.command, { cmd: 'hold', value: 0 })
+    }
     this.view?.webContents.send(YT_PAGE.command, command)
   }
 
@@ -146,7 +155,11 @@ export class YtPlayer {
       e.preventDefault()
     }
     // A new page starts without the analysis tap; replay what the visualizer wants.
+    wc.on('dom-ready', () => {
+      if (this.holding) wc.send(YT_PAGE.command, { cmd: 'hold', value: 1 })
+    })
     wc.on('did-finish-load', () => {
+      if (this.holding) wc.send(YT_PAGE.command, { cmd: 'hold', value: 1 })
       if (this.analysing) wc.send(YT_PAGE.command, { cmd: 'analyse', value: 1 })
     })
     wc.on('will-navigate', guard)

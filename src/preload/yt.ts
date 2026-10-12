@@ -24,10 +24,19 @@ const video = (): HTMLVideoElement | null => document.querySelector('video')
 let lastSent = { t: -1, playing: false, rate: 1, at: 0 }
 /** Last volume the app asked for. The page resets its <video> volume on its own (track change, element swap), so it is re-applied on drift. */
 let wantedVolume: number | null = null
+/** Autoplay is paused until the app's first play command; a page the user has clicked in is theirs to play. */
+let holding = false
+
+const holdsAutoplay = (): boolean => holding && !navigator.userActivation.hasBeenActive
+// Catches autoplay the moment it starts; the poll below covers a swapped <video>.
+document.addEventListener('play', (e) => {
+  if (holdsAutoplay() && e.target instanceof HTMLVideoElement) e.target.pause()
+}, true)
 
 setInterval(() => {
   const v = video()
   if (!v || location.origin !== TRUSTED_ORIGIN) return
+  if (holdsAutoplay() && !v.paused) v.pause()
   if (wantedVolume !== null && Math.abs(v.volume - wantedVolume) > VOLUME_EPSILON) v.volume = wantedVolume
   const now = Date.now()
   const playing = !v.paused && !v.ended
@@ -112,6 +121,11 @@ ipcRenderer.on(COMMAND, (_e, command: { cmd?: string; value?: number }) => {
     return
   }
   if (typeof command !== 'object' || command === null) return
+  if (command.cmd === 'hold') {
+    holding = command.value === 1
+    if (holding) video()?.pause()
+    return
+  }
   // Recorded even before a <video> exists; the poll applies it once one appears.
   if (command.cmd === 'volume' && typeof command.value === 'number' && Number.isFinite(command.value)) {
     wantedVolume = Math.min(1, Math.max(0, command.value))

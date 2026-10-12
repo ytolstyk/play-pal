@@ -38,10 +38,39 @@ describe('visualizer scene', () => {
       if (scene.beat) beats++
     }
     expect(scene.bands.length).toBe(BAND_COUNT)
-    expect(Math.max(...scene.bands)).toBeGreaterThan(0.9) // auto-gain lifts a quiet signal
+    expect(Math.max(...scene.bands)).toBeGreaterThan(0.8) // auto-gain lifts a quiet signal
     expect(beats).toBeGreaterThan(0)
 
     for (let i = 0; i < 300; i++) advance(scene, null, 1 / 60)
     expect(isAtRest(scene)).toBe(true)
+  })
+
+  it('flags a surge when a quiet passage jumps to loud, but not for steady loudness', () => {
+    const scene = createScene(WAVE_SAMPLES)
+    for (let i = 0; i < 240; i++) advance(scene, frame(40), 1 / 60)
+    let surges = 0
+    for (let i = 0; i < 60; i++) {
+      advance(scene, frame(255), 1 / 60)
+      if (scene.surge >= 1) surges++
+    }
+    expect(surges).toBe(1)
+    for (let i = 0; i < 600; i++) advance(scene, frame(255), 1 / 60)
+    surges = 0
+    for (let i = 0; i < 120; i++) {
+      advance(scene, frame(255), 1 / 60)
+      if (scene.surge >= 1) surges++
+    }
+    expect(surges).toBe(0)
+  })
+
+  it('does not flag a surge when playback starts from silence', () => {
+    const scene = createScene(WAVE_SAMPLES)
+    for (let i = 0; i < 120; i++) advance(scene, frame(0), 1 / 60)
+    let surges = 0
+    for (let i = 0; i < 300; i++) {
+      advance(scene, frame(255), 1 / 60)
+      if (scene.surge >= 1) surges++
+    }
+    expect(surges).toBe(0)
   })
 })

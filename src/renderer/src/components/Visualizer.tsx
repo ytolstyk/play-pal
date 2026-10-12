@@ -44,7 +44,9 @@ export function Visualizer({ feed, kind, playing }: Props): React.JSX.Element {
     let colorsAt = 0
     let raf = 0
     let last = 0
+    let warned = false
     memory.current.particles.length = 0
+    memory.current.rings.length = 0
 
     const resize = (): void => {
       const dpr = window.devicePixelRatio || 1
@@ -59,9 +61,16 @@ export function Visualizer({ feed, kind, playing }: Props): React.JSX.Element {
     }
 
     const render = (dt: number): void => {
+      // The first animation frame can precede the first layout pass; drawing at size 0 only produces errors.
+      if (size.w < 1 || size.h < 1) return
       advance(scene.current, feed.read(), dt)
       g.clearRect(0, 0, size.w, size.h)
-      draw({ g, w: size.w, h: size.h, s: scene.current, c: colors, dt }, memory.current)
+      g.save() // a drawer that throws midway must not leave additive blending or alpha behind
+      try {
+        draw({ g, w: size.w, h: size.h, s: scene.current, c: colors, dt }, memory.current)
+      } finally {
+        g.restore()
+      }
     }
 
     const loop = (now: number): void => {
@@ -71,9 +80,15 @@ export function Visualizer({ feed, kind, playing }: Props): React.JSX.Element {
         colors = readColors()
         colorsAt = now
       }
-      render(dt)
+      try {
+        render(dt)
+      } catch (err) {
+        // One bad frame must not end the animation for good.
+        if (!warned) console.warn('[visualizer] draw failed', err)
+        warned = true
+      }
       // Idle: let it fall to silence, then stop drawing until playback resumes.
-      raf = playingRef.current || !isAtRest(scene.current, memory.current.particles.length) ? requestAnimationFrame(loop) : 0
+      raf = playingRef.current || !isAtRest(scene.current, memory.current.particles.length + memory.current.rings.length) ? requestAnimationFrame(loop) : 0
     }
 
     const start = (): void => {

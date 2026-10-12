@@ -75,6 +75,9 @@ main { position: relative; overflow-y: auto; min-width: 0; }
 .title-input { font-size: 18px; font-weight: 600; background: transparent; border-color: transparent; padding: 4px 6px; margin-left: -6px; }
 .title-input:hover, .title-input:focus { border-color: var(--line); }
 .yt-slot { width: 100%; background: #000; border: 1px solid var(--line); border-radius: var(--radius); display: grid; place-items: center; }
+.yt-resize { height: 10px; margin: -6px 0; cursor: row-resize; touch-action: none; position: relative; z-index: 1; display: grid; place-items: center; }
+.yt-resize::after { content: ''; width: 48px; height: 4px; border-radius: 2px; background: var(--line); transition: background .15s; }
+.yt-resize:hover::after, .yt-resize:focus-visible::after { background: var(--accent); }
 .transport { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .readout { min-width: 170px; }
 .transport label { display: flex; align-items: center; gap: 6px; }

@@ -20,7 +20,9 @@ interface Props {
 
 const RATES = [0.5, 0.75, 0.9, 1]
 const YT_BOUNDS_POLL_MS = 250
-const YT_HEIGHT = { min: 160, max: 900, default: 340, step: 20, storageKey: 'ytSlotHeight' }
+const YT_HEIGHT = { min: 160, max: 900, default: 340, keyStep: 20, storageKey: 'ytSlotHeight' }
+
+const clampYtHeight = (h: number): number => Math.min(YT_HEIGHT.max, Math.max(YT_HEIGHT.min, Math.round(h)))
 
 const loadYtHeight = (): number => {
   try {
@@ -49,6 +51,25 @@ export function Player({ track, suspendVideo, onChange }: Props): React.JSX.Elem
     } catch {
       // not persisted; the size still applies for this session
     }
+  }
+
+  // Drag the divider under the video. Pointer capture keeps the drag alive outside the handle.
+  const startResize = (e: React.PointerEvent<HTMLDivElement>): void => {
+    e.preventDefault()
+    const handle = e.currentTarget
+    const startY = e.clientY
+    const startH = ytHeight
+    handle.setPointerCapture(e.pointerId)
+    const move = (ev: PointerEvent): void => setYtHeight(clampYtHeight(startH + ev.clientY - startY))
+    const end = (ev: PointerEvent): void => {
+      handle.removeEventListener('pointermove', move)
+      handle.removeEventListener('pointerup', end)
+      handle.removeEventListener('pointercancel', end)
+      changeYtHeight(clampYtHeight(startH + ev.clientY - startY))
+    }
+    handle.addEventListener('pointermove', move)
+    handle.addEventListener('pointerup', end)
+    handle.addEventListener('pointercancel', end)
   }
 
   useEffect(() => window.api.onCueFired(setFiredId), [])
@@ -146,9 +167,29 @@ export function Player({ track, suspendVideo, onChange }: Props): React.JSX.Elem
       {track.source.kind === 'file' ? (
         <audio ref={audioRef} src={`ppfile://t/${track.id}`} preload="auto" />
       ) : (
-        <div className="yt-slot" ref={slotRef} style={{ height: ytHeight }}>
-          <p className="muted small">YouTube Music loads here. Sign in once and the session is remembered.</p>
-        </div>
+        <>
+          <div className="yt-slot" ref={slotRef} style={{ height: ytHeight }}>
+            <p className="muted small">YouTube Music loads here. Sign in once and the session is remembered.</p>
+          </div>
+          <div
+            className="yt-resize"
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label="Resize video view"
+            aria-valuemin={YT_HEIGHT.min}
+            aria-valuemax={YT_HEIGHT.max}
+            aria-valuenow={ytHeight}
+            tabIndex={0}
+            onPointerDown={startResize}
+            onDoubleClick={() => changeYtHeight(YT_HEIGHT.default)}
+            onKeyDown={(e) => {
+              const dir = e.key === 'ArrowDown' ? 1 : e.key === 'ArrowUp' ? -1 : 0
+              if (!dir) return
+              e.preventDefault()
+              changeYtHeight(clampYtHeight(ytHeight + dir * YT_HEIGHT.keyStep))
+            }}
+          />
+        </>
       )}
       <Wire variant="a" />
       <StartPresetEditor start={track.start} onChange={(start) => onChange((t) => ({ ...t, start }))} />
@@ -175,19 +216,6 @@ export function Player({ track, suspendVideo, onChange }: Props): React.JSX.Elem
             <button onClick={() => window.api.ytReturn()} title="Navigate the video view back to this track">
               Back to track
             </button>
-            <label className="muted small">
-              View size
-              <input
-                type="range"
-                min={YT_HEIGHT.min}
-                max={YT_HEIGHT.max}
-                step={YT_HEIGHT.step}
-                value={ytHeight}
-                aria-label="Video view size"
-                onChange={(e) => changeYtHeight(Number(e.target.value))}
-                onPointerUp={(e) => e.currentTarget.blur()}
-              />
-            </label>
           </>
         )}
       </div>

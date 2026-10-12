@@ -6,6 +6,7 @@ import { MAX_TITLE } from '../../../shared/types'
 import { usePlayback } from '../hooks/usePlayback'
 import { Wire } from './Circuit'
 import { CueList } from './CueList'
+import { Timeline } from './Timeline'
 import { StartPresetEditor } from './StartPresetEditor'
 
 interface Props {
@@ -153,7 +154,6 @@ export function Player({ track, suspendVideo, onChange }: Props): React.JSX.Elem
   )
 
   const duration = state.duration
-  const pct = (t: number): string => `${duration > 0 ? Math.min(100, (t / duration) * 100) : 0}%`
 
   return (
     <section className="player">
@@ -223,24 +223,7 @@ export function Player({ track, suspendVideo, onChange }: Props): React.JSX.Elem
         )}
       </div>
       <Wire variant="b" />
-      <div
-        className="timeline"
-        role="slider"
-        aria-label="Position"
-        aria-valuemin={0}
-        aria-valuemax={Math.round(duration)}
-        aria-valuenow={Math.round(state.t)}
-        onClick={(e) => {
-          if (duration <= 0) return
-          const r = e.currentTarget.getBoundingClientRect()
-          seek(((e.clientX - r.left) / r.width) * duration)
-        }}
-      >
-        <div className="played" style={{ transform: `scaleX(${duration > 0 ? Math.min(1, state.t / duration) : 0})` }} />
-        {track.cues.map((c) => (
-          <div key={c.id} className={c.id === firedId ? 'marker fired' : 'marker'} style={{ left: pct(c.time) }} title={c.label} />
-        ))}
-      </div>
+      <Timeline t={state.t} duration={duration} cues={track.cues} firedId={firedId} onSeek={seek} />
       <Wire variant="c" />
       <CueList cues={track.cues} firedId={firedId} onChange={changeCue} onDelete={deleteCue} onSeek={seek} />
     </section>

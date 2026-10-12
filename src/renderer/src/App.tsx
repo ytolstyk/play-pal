@@ -6,6 +6,7 @@ import { SettingsPanel } from './components/SettingsPanel'
 import { Sidebar } from './components/Sidebar'
 import { StatusBar } from './components/StatusBar'
 import { useLibrary } from './hooks/useLibrary'
+import { useLimiter } from './hooks/useLimiter'
 import { useMidiStatus } from './hooks/useMidiStatus'
 import { useTheme } from './hooks/useTheme'
 
@@ -14,6 +15,7 @@ export function App(): React.JSX.Element {
   const midi = useMidiStatus()
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [theme, setTheme] = useTheme()
+  const [limiter, setLimiter] = useLimiter()
   const [settingsOpen, setSettingsOpen] = useState(false)
   const closeSettings = useCallback(() => setSettingsOpen(false), [])
 
@@ -82,7 +84,7 @@ export function App(): React.JSX.Element {
           void update((lib) => ({ ...lib, leadMs: ms }), true)
         }}
       />
-      {settingsOpen && <SettingsPanel theme={theme} onChange={setTheme} onClose={closeSettings} />}
+      {settingsOpen && <SettingsPanel theme={theme} onChange={setTheme} limiter={limiter} onLimiterChange={setLimiter} onClose={closeSettings} />}
     </div>
   )
 }

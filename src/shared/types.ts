@@ -98,6 +98,8 @@ export type YtCommand =
   | { cmd: 'hold'; value: 0 | 1 }
   /** 1 starts streaming analyser frames from the page, 0 stops. */
   | { cmd: 'analyse'; value: 0 | 1 }
+  /** 1 routes the page's audio through a limiter that tames sudden loud bursts. */
+  | { cmd: 'limiter'; value: 0 | 1 }
 
 export const DEFAULT_VOLUME = 1
 export const PORT_BASE_NAME = 'Play Pal'

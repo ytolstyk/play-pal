@@ -39,6 +39,7 @@ export class YtPlayer {
   private bounds: Rect | null = null
   private videoId: string | null = null
   private analysing = false
+  private limiting = false
   /** The page must not start playing by itself (the track's start preset goes out first); cleared by the first play command. */
   private holding = false
 
@@ -94,6 +95,7 @@ export class YtPlayer {
 
   command(command: YtCommand): void {
     if (command.cmd === 'analyse') this.analysing = command.value === 1
+    if (command.cmd === 'limiter') this.limiting = command.value === 1
     if (command.cmd === 'play' && this.holding) {
       this.holding = false
       this.view?.webContents.send(YT_PAGE.command, { cmd: 'hold', value: 0 })
@@ -161,6 +163,7 @@ export class YtPlayer {
     wc.on('did-finish-load', () => {
       if (this.holding) wc.send(YT_PAGE.command, { cmd: 'hold', value: 1 })
       if (this.analysing) wc.send(YT_PAGE.command, { cmd: 'analyse', value: 1 })
+      if (this.limiting) wc.send(YT_PAGE.command, { cmd: 'limiter', value: 1 })
     })
     wc.on('will-navigate', guard)
     wc.on('will-redirect', guard)

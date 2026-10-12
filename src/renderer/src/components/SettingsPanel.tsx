@@ -4,12 +4,14 @@ import { THEME_PRESETS, type Theme } from '../theme'
 interface Props {
   theme: Theme
   onChange(theme: Theme): void
+  limiter: boolean
+  onLimiterChange(on: boolean): void
   onClose(): void
 }
 
 const sameColor = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase()
 
-export function SettingsPanel({ theme, onChange, onClose }: Props): React.JSX.Element {
+export function SettingsPanel({ theme, onChange, limiter, onLimiterChange, onClose }: Props): React.JSX.Element {
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') onClose()
@@ -57,6 +59,13 @@ export function SettingsPanel({ theme, onChange, onClose }: Props): React.JSX.El
           <label>
             <input type="color" value={theme.secondary} onChange={(e) => onChange({ ...theme, secondary: e.target.value })} />
             Secondary trim
+          </label>
+        </div>
+        <h3 className="muted small">YouTube Music audio</h3>
+        <div className="custom">
+          <label title="Compresses sudden loud peaks. Adds a little loudness and latency.">
+            <input type="checkbox" checked={limiter} onChange={(e) => onLimiterChange(e.target.checked)} />
+            Limiter (tames loud bursts)
           </label>
         </div>
       </section>

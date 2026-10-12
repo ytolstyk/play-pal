@@ -5,10 +5,12 @@ interface Props {
   midi: MidiStatus
   leadMs: number
   messages: string[]
+  settingsOpen: boolean
+  onToggleSettings(): void
   onLeadChange(ms: number): void
 }
 
-export function StatusBar({ midi, leadMs, messages, onLeadChange }: Props): React.JSX.Element {
+export function StatusBar({ midi, leadMs, messages, settingsOpen, onToggleSettings, onLeadChange }: Props): React.JSX.Element {
   const open = midi.state === 'open'
   return (
     <footer className="statusbar">
@@ -28,6 +30,9 @@ export function StatusBar({ midi, leadMs, messages, onLeadChange }: Props): Reac
         ms early
       </label>
       <span className="messages small">{messages.join(' · ')}</span>
+      <button className="ghost small gear" aria-expanded={settingsOpen} onClick={onToggleSettings} title="Settings">
+        ⚙ Settings
+      </button>
     </footer>
   )
 }

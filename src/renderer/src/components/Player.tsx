@@ -4,10 +4,16 @@ import { DEFAULT_CUE_ACTION, sortedByTime } from '../../../shared/cues'
 import { formatTime } from '../../../shared/time'
 import { MAX_TITLE } from '../../../shared/types'
 import { usePlayback } from '../hooks/usePlayback'
+import { Wire } from './Circuit'
 import { CueList } from './CueList'
 
 interface Props {
   track: Track
+  /**
+   * True while a modal overlay (settings) is open. The YouTube view is a native layer above the
+   * page, so it is hidden (setYtBounds(null)) and the play/cue hotkeys are ignored meanwhile.
+   */
+  suspendVideo: boolean
   onChange(change: (t: Track) => Track): void
 }
 
@@ -28,7 +34,7 @@ const loadYtHeight = (): number => {
 const isTypingTarget = (t: EventTarget | null): boolean =>
   t instanceof HTMLElement && ['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(t.tagName)
 
-export function Player({ track, onChange }: Props): React.JSX.Element {
+export function Player({ track, suspendVideo, onChange }: Props): React.JSX.Element {
   const { state, timeRef, audioRef, toggle, seek, setRate } = usePlayback(track)
   const [firedId, setFiredId] = useState<string | null>(null)
   const [ytHeight, setYtHeight] = useState(loadYtHeight)
@@ -46,10 +52,26 @@ export function Player({ track, onChange }: Props): React.JSX.Element {
 
   useEffect(() => window.api.onCueFired(setFiredId), [])
 
+  // Lets the stylesheet run the wire pulses only while playing in a visible window, so they cost
+  // nothing when idle or behind a DAW (the window keeps running with backgroundThrottling off).
+  useEffect(() => {
+    const root = document.documentElement
+    const sync = (): void => {
+      if (state.playing && !document.hidden) root.dataset.playing = ''
+      else delete root.dataset.playing
+    }
+    sync()
+    document.addEventListener('visibilitychange', sync)
+    return () => {
+      document.removeEventListener('visibilitychange', sync)
+      delete root.dataset.playing
+    }
+  }, [state.playing])
+
   // The YouTube Music view is a native overlay; keep it glued to the slot's rectangle.
   useEffect(() => {
     const slot = slotRef.current
-    if (!isYt || !slot) return
+    if (!isYt || suspendVideo || !slot) return
     let last = ''
     const report = (): void => {
       const r = slot.getBoundingClientRect()
@@ -71,7 +93,7 @@ export function Player({ track, onChange }: Props): React.JSX.Element {
       window.removeEventListener('resize', report)
       window.api.setYtBounds(null)
     }
-  }, [isYt])
+  }, [isYt, suspendVideo])
 
   const addCue = useCallback(() => {
     onChange((t) => {
@@ -88,7 +110,7 @@ export function Player({ track, onChange }: Props): React.JSX.Element {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (isTypingTarget(e.target) || e.metaKey || e.ctrlKey || e.altKey) return
+      if (suspendVideo || isTypingTarget(e.target) || e.metaKey || e.ctrlKey || e.altKey) return
       if (e.code === 'Space') {
         e.preventDefault()
         toggle()
@@ -96,7 +118,7 @@ export function Player({ track, onChange }: Props): React.JSX.Element {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [toggle, addCue])
+  }, [toggle, addCue, suspendVideo])
 
   const changeCue = useCallback(
     (id: string, change: Partial<Cue>) =>
@@ -127,6 +149,7 @@ export function Player({ track, onChange }: Props): React.JSX.Element {
           <p className="muted small">YouTube Music loads here. Sign in once and the session is remembered.</p>
         </div>
       )}
+      <Wire variant="a" />
       <div className="transport">
         <button className="primary" onClick={toggle}>
           {state.playing ? 'Pause' : 'Play'}
@@ -166,6 +189,7 @@ export function Player({ track, onChange }: Props): React.JSX.Element {
           </>
         )}
       </div>
+      <Wire variant="b" />
       <div
         className="timeline"
         role="slider"
@@ -184,6 +208,7 @@ export function Player({ track, onChange }: Props): React.JSX.Element {
           <div key={c.id} className={c.id === firedId ? 'marker fired' : 'marker'} style={{ left: pct(c.time) }} title={c.label} />
         ))}
       </div>
+      <Wire variant="c" />
       <CueList cues={track.cues} firedId={firedId} onChange={changeCue} onDelete={deleteCue} onSeek={seek} />
     </section>
   )

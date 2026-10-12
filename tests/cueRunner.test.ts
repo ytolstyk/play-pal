@@ -66,6 +66,53 @@ describe('CueRunner', () => {
     expect(fired).toEqual(['b', 'a'])
   })
 
+  it('re-fires the active cue when a seek lands just past it', () => {
+    const { runner, fired } = setup([cue('a', 10), cue('b', 20)])
+    runner.sample(sample(15), 0)
+    runner.sample(sample(10.5), 1000) // back to the start of the section already loaded
+    expect(fired).toEqual(['a', 'a'])
+  })
+
+  it('does not re-fire on a forward jump just past the loaded cue (stall)', () => {
+    const { runner, fired } = setup([cue('a', 10)])
+    runner.sample(sample(10.2), 0)
+    runner.sample(sample(11), 100) // expected ~10.3: jumped forward within the section
+    expect(fired).toEqual(['a'])
+  })
+
+  it('rate-limits re-fires while scrubbing just past a cue', () => {
+    const { runner, fired } = setup([cue('a', 10)])
+    runner.sample(sample(15), 0)
+    runner.sample(sample(10.4), 1000)
+    runner.sample(sample(10.6, false), 1040)
+    runner.sample(sample(10.3, false), 1080)
+    expect(fired).toEqual(['a', 'a'])
+  })
+
+  it('does not resend the loaded cue for a seek deeper into its section', () => {
+    const { runner, fired } = setup([cue('a', 10), cue('b', 20)])
+    runner.sample(sample(12), 0)
+    runner.sample(sample(17), 100)
+    expect(fired).toEqual(['a'])
+  })
+
+  it('forgets the loaded cue and fires a cue at the start after the preset was replaced', () => {
+    const { runner, fired } = setup([cue('a', 0), cue('b', 20)])
+    runner.sample(sample(25), 0)
+    expect(fired).toEqual(['b'])
+    runner.presetReplaced()
+    runner.sample(sample(0), 1000) // playback begins at the start
+    expect(fired).toEqual(['b', 'a'])
+  })
+
+  it('resends a section cue after the preset was replaced', () => {
+    const { runner, fired } = setup([cue('a', 10)])
+    runner.sample(sample(15), 0)
+    runner.presetReplaced()
+    runner.sample(sample(16), 1000)
+    expect(fired).toEqual(['a', 'a'])
+  })
+
   it('does nothing when seeking before every cue', () => {
     const { runner, fired } = setup([cue('a', 10)])
     runner.sample(sample(2), 0)

@@ -238,6 +238,13 @@ function registerIpc(): void {
     return canceled ? null : (filePaths[0] ?? null)
   })
   ipcMain.on(IPC.arm, (e, raw: unknown) => trusted(e) && armTrack(raw))
+  ipcMain.handle(IPC.startPreset, async (e, trackId: unknown): Promise<boolean> => {
+    const start = trusted(e) && armed !== null && armed.id === trackId ? armed.start : undefined
+    if (!start || !sender.send(start.action)) return false
+    runner.presetReplaced()
+    await new Promise((resolve) => setTimeout(resolve, start.waitMs))
+    return armed?.id === trackId // the track may have been switched during the wait
+  })
   ipcMain.on(IPC.lead, (e, ms: unknown) => {
     if (trusted(e) && typeof ms === 'number') runner.setLeadMs(clampInt(ms, 0, MAX_LEAD_MS))
   })

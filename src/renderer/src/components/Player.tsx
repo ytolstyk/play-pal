@@ -6,6 +6,7 @@ import { MAX_TITLE } from '../../../shared/types'
 import { usePlayback } from '../hooks/usePlayback'
 import { Wire } from './Circuit'
 import { CueList } from './CueList'
+import { StartPresetEditor } from './StartPresetEditor'
 
 interface Props {
   track: Track
@@ -35,7 +36,7 @@ const isTypingTarget = (t: EventTarget | null): boolean =>
   t instanceof HTMLElement && ['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(t.tagName)
 
 export function Player({ track, suspendVideo, onChange }: Props): React.JSX.Element {
-  const { state, timeRef, audioRef, toggle, seek, setRate } = usePlayback(track)
+  const { state, timeRef, audioRef, starting, toggle, seek, setRate } = usePlayback(track)
   const [firedId, setFiredId] = useState<string | null>(null)
   const [ytHeight, setYtHeight] = useState(loadYtHeight)
   const slotRef = useRef<HTMLDivElement>(null)
@@ -150,9 +151,10 @@ export function Player({ track, suspendVideo, onChange }: Props): React.JSX.Elem
         </div>
       )}
       <Wire variant="a" />
+      <StartPresetEditor start={track.start} onChange={(start) => onChange((t) => ({ ...t, start }))} />
       <div className="transport">
-        <button className="primary" onClick={toggle}>
-          {state.playing ? 'Pause' : 'Play'}
+        <button className="primary" disabled={starting} onClick={toggle}>
+          {starting ? 'Loading…' : state.playing ? 'Pause' : 'Play'}
         </button>
         <span className="mono readout">
           {formatTime(state.t)} / {formatTime(duration)}

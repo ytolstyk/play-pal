@@ -4,6 +4,10 @@ import type { ClockSample, Cue } from '../shared/types'
 /** A sample further than this from where we expected the player to be means the user seeked or looped. */
 const SEEK_TOLERANCE_S = 0.3
 const PAUSED_TOLERANCE_S = 0.02
+/** Landing within this long after a cue means the user aimed at that cue, so it fires even if already loaded. */
+const JUST_PAST_CUE_S = 1
+/** Re-sending an already loaded cue is rate-limited so scrubbing can't flood the plugin with preset loads. */
+const REFIRE_MIN_MS = 250
 /** No sample for this long means the player is gone (crash, hang, YouTube moved on): stop extrapolating. */
 const STALE_MS = 2000
 /** How often a cue whose MIDI failed (port down) is retried. */
@@ -22,7 +26,8 @@ interface Base {
  *
  * Between samples the position is extrapolated from the last one, so firing does not depend on
  * how often the player reports. A jump (seek/loop/track change) never replays the cues it skipped;
- * it fires only the cue that should be active at the new position, and only if that preset isn't already loaded.
+ * it fires only the cue that should be active at the new position, and only if that preset isn't already loaded
+ * or the position is just past the cue (a seek aimed at it).
  * Crossing a cue during playback always fires, so looping a section re-fires its cues.
  */
 export class CueRunner {
@@ -36,6 +41,7 @@ export class CueRunner {
   private activeId: string | null = null
   /** A cue that crossed but couldn't be sent yet; retried until it goes out or something newer replaces it. */
   private pending: { cue: Cue; lastTry: number } | null = null
+  private lastEmitAt = -Infinity
 
   /** `fire` reports whether the MIDI actually went out; a failed send leaves the cue unfired. */
   constructor(private readonly fire: (cue: Cue) => boolean) {}
@@ -47,6 +53,7 @@ export class CueRunner {
     this.cursor = 0
     this.activeId = null
     this.pending = null
+    this.lastEmitAt = -Infinity
   }
 
   /** Cues edited while a track is open; position and "already fired" state are kept. */
@@ -64,6 +71,16 @@ export class CueRunner {
     }
   }
 
+  /**
+   * Something outside the cues (the start preset) replaced the loaded preset. Forget it, and treat the
+   * next sample as a fresh start so a cue at the very beginning is fired once playback begins.
+   */
+  presetReplaced(): void {
+    this.activeId = null
+    this.base = null
+    this.pending = null
+  }
+
   setLeadMs(ms: number): void {
     this.leadS = ms / 1000
   }
@@ -71,13 +88,18 @@ export class CueRunner {
   sample(s: ClockSample, now: number): void {
     if (s.trackId !== this.trackId) return
     const jumped = this.base === null || this.isJump(s, now)
+    // Only a rewind can be aimed at a cue already behind us; a forward jump (stall, ad) stays in its section.
+    const rewound = this.base !== null && s.t < this.positionAt(now)
     this.base = { t: s.t, at: now, playing: s.playing, rate: s.rate }
     if (!jumped) return
     this.cursor = s.t + this.leadS
     this.pending = null // a retry from before the jump would load the wrong section's preset
     const active = this.lastCueAtOrBefore(this.cursor)
-    // The same preset is already loaded; don't resend it on every seek within one section.
-    if (active && active.id !== this.activeId) this.emit(active, now)
+    if (!active) return
+    // The same preset is already loaded; don't resend it on every seek within one section,
+    // unless the seek landed right at its start (restarting that section).
+    const restart = rewound && this.cursor - active.time <= JUST_PAST_CUE_S && now - this.lastEmitAt >= REFIRE_MIN_MS
+    if (active.id !== this.activeId || restart) this.emit(active, now)
   }
 
   /** The player is no longer reporting for this track (e.g. YouTube auto-advanced). */
@@ -129,6 +151,7 @@ export class CueRunner {
   private emit(cue: Cue, now: number): void {
     if (this.fire(cue)) {
       this.activeId = cue.id
+      this.lastEmitAt = now
       this.pending = null
     } else {
       this.pending = { cue, lastTry: now }

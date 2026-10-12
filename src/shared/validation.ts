@@ -6,6 +6,7 @@ import {
   MAX_CUES,
   MAX_LABEL,
   MAX_LEAD_MS,
+  MAX_START_WAIT_MS,
   MAX_TITLE,
   MAX_TRACKS,
   MIDI_CHANNEL_MAX,
@@ -15,6 +16,7 @@ import {
   type Library,
   type LoadResult,
   type MidiAction,
+  type StartPreset,
   type Track
 } from './types'
 
@@ -52,6 +54,13 @@ function validateCue(c: unknown): string[] {
   return errors
 }
 
+function validateStart(s: unknown): string[] {
+  if (!isObject(s)) return ['start preset must be an object']
+  const errors = validateAction(s.action).map((m) => `start preset: ${m}`)
+  if (!isInt(s.waitMs, 0, MAX_START_WAIT_MS)) errors.push(`start wait must be 0-${MAX_START_WAIT_MS} ms`)
+  return errors
+}
+
 function validateSource(s: unknown): string[] {
   if (!isObject(s)) return ['source must be an object']
   if (s.kind === 'file') {
@@ -69,6 +78,7 @@ export function validateTrack(t: unknown): string[] {
   if (typeof t.id !== 'string' || !ID.test(t.id)) errors.push('invalid track id')
   if (typeof t.title !== 'string' || t.title.length > MAX_TITLE) errors.push('invalid title')
   errors.push(...validateSource(t.source))
+  if (t.start !== undefined) errors.push(...validateStart(t.start))
   if (!Array.isArray(t.cues)) return [...errors, 'cues must be a list']
   if (t.cues.length > MAX_CUES) return [...errors, 'too many cues']
   t.cues.forEach((c, i) => errors.push(...validateCue(c).map((m) => `cue #${i + 1}: ${m}`)))
@@ -95,12 +105,14 @@ const pickAction = (a: MidiAction): MidiAction => ({
   number: a.number,
   value: a.value
 })
+const pickStart = (s: StartPreset): StartPreset => ({ action: pickAction(s.action), waitMs: s.waitMs })
 const pickCue = (c: Cue): Cue => ({ id: c.id, time: c.time, label: c.label, action: pickAction(c.action) })
 const pickTrack = (t: Track): Track => ({
   id: t.id,
   title: t.title,
   source: t.source.kind === 'file' ? { kind: 'file', path: t.source.path } : { kind: 'ytmusic', videoId: t.source.videoId },
-  cues: sortedByTime(t.cues.map(pickCue))
+  cues: sortedByTime(t.cues.map(pickCue)),
+  ...(t.start ? { start: pickStart(t.start) } : {})
 })
 
 /** Re-picks known fields (nothing extra from the renderer is persisted) and sorts cues by time. Validate first. */

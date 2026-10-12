@@ -141,3 +141,9 @@ html[data-playing] .pulse { opacity: 0.5; animation: pulse 5s linear infinite; }
 .custom { display: flex; gap: 14px; margin-top: 12px; }
 .custom label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
 .custom input[type='color'] { width: 34px; height: 26px; padding: 0; background: none; cursor: pointer; }
+
+/* start preset */
+.start-preset { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 6px 8px; background: var(--panel); border: 1px solid var(--trim); border-radius: 8px; }
+.start-preset > label:first-child { display: flex; align-items: center; gap: 6px; font-weight: 500; margin-right: 6px; }
+.start-preset .num { display: flex; align-items: center; gap: 4px; color: var(--muted); font-size: 12px; }
+.start-preset .num input { width: 64px; padding: 4px 6px; }

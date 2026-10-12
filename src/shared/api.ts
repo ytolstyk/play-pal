@@ -23,6 +23,11 @@ export interface Api {
    * unloads the YouTube Music view when the source changes.
    */
   armTrack(track: Track | null): void
+  /**
+   * Sends the armed track's start preset and resolves once its wait has elapsed, i.e. when
+   * playback may begin. False if the track has none or the MIDI didn't go out.
+   */
+  sendStartPreset(trackId: string): Promise<boolean>
   /** Applies the fire-early offset immediately (saving it is separate). */
   setLead(ms: number): void
   /** Position of a local-file track, reported by the renderer's audio element. */

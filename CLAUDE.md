@@ -20,7 +20,7 @@ Install with `npm_config_arch=arm64 npm install`; if `node_modules/electron/dist
 
 - `src/shared/`: types, IPC channel names, `api.ts` (the `window.api` contract), validation, MIDI encoding, URL/time helpers. Pure.
 - `src/main/`:
-  - `cueRunner.ts`: pure scheduler. Takes position samples, extrapolates between them, fires cues. A jump (seek/loop) fires only the cue active at the new position, never the skipped ones; the same cue is never fired twice in a row.
+  - `cueRunner.ts`: pure scheduler. Takes position samples, extrapolates between them, fires cues. A jump (seek/loop) fires only the cue active at the new position, never the skipped ones; the same cue is not re-fired by a seek deeper into its section, but is when the seek lands just past it.
   - `index.ts`: wiring, IPC (every handler checks the sender and validates payloads), the `ppfile://t/<track id>` protocol (serves only library tracks of kind `file`), serialized library saves.
   - `ytPlayer.ts`: music.youtube.com in a `WebContentsView` with persistent partition `persist:ytmusic`, navigation allowlist, Electron stripped from the UA (Google rejects it at sign-in). `preload/yt.ts` reports the page's `<video>` position (40 ms) and applies commands.
   - `midi.ts`/`actionSender.ts`: virtual CoreMIDI port; notes get an automatic Note Off after 100 ms.
@@ -32,4 +32,5 @@ Install with `npm_config_arch=arm64 npm install`; if `node_modules/electron/dist
 - Main owns what plays and fires. The renderer must `await` an immediate save before selecting a newly added track (main resolves tracks from its saved copy).
 - The two preload bundles must not share runtime imports (sandboxed preloads can't require chunks); `YT_PAGE` channel names are duplicated as literals in `preload/yt.ts`.
 - `backgroundThrottling: false` on the window and YT view: cues must keep timing when the app is behind a DAW.
+- A track's optional start preset is sent by main (`player:start-preset`), which resolves after its wait; the renderer starts playback only then, and only when playing from the start (first second, or a finished track); it also resets the runner's loaded-preset memory (`presetReplaced`).
 - Cues store raw MIDI (type/channel/number/value), not references to midi-controller bindings.

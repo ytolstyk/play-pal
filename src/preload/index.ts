@@ -17,6 +17,7 @@ const api: Api = {
   saveLibrary: (library) => ipcRenderer.invoke(IPC.librarySave, library),
   pickAudioFile: () => ipcRenderer.invoke(IPC.pickAudio),
   armTrack: (track) => ipcRenderer.send(IPC.arm, track),
+  sendStartPreset: (trackId) => ipcRenderer.invoke(IPC.startPreset, trackId),
   setLead: (ms) => ipcRenderer.send(IPC.lead, ms),
   sendClock: (sample) => ipcRenderer.send(IPC.fileClock, sample),
   onPlayback: subscribe<PlaybackState>(IPC.playback),

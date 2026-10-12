@@ -23,11 +23,18 @@ export type TrackSource =
   | { kind: 'file'; path: string }
   | { kind: 'ytmusic'; videoId: string }
 
+/** Sent when playback starts from the beginning; playback begins `waitMs` later so the preset can load. */
+export interface StartPreset {
+  action: MidiAction
+  waitMs: number
+}
+
 export interface Track {
   id: string
   title: string
   source: TrackSource
   cues: Cue[]
+  start?: StartPreset
 }
 
 export interface Library {
@@ -84,6 +91,8 @@ export type YtCommand =
 export const PORT_BASE_NAME = 'Play-Pal'
 export const NOTE_OFF_DELAY_MS = 100
 export const MAX_LEAD_MS = 1000
+export const MAX_START_WAIT_MS = 5000
+export const DEFAULT_START_WAIT_MS = 1000
 export const MIDI_CHANNEL_MIN = 1
 export const MIDI_CHANNEL_MAX = 16
 export const MIDI_DATA_MAX = 127

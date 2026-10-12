@@ -39,6 +39,25 @@ describe('validateLibrary', () => {
   })
 })
 
+describe('start preset', () => {
+  const start = { action: { type: 'cc', channel: 1, number: 20, value: 5 }, waitMs: 800 } as const
+
+  it('accepts a valid start preset and keeps it through sanitizing', () => {
+    const l = lib([track({ start })])
+    expect(validateLibrary(l)).toEqual([])
+    expect(sanitizeLibrary(l).tracks[0].start).toEqual(start)
+  })
+
+  it('rejects a bad action or wait', () => {
+    expect(validateLibrary(lib([track({ start: { ...start, waitMs: 99999 } })])).length).toBeGreaterThan(0)
+    expect(validateLibrary(lib([track({ start: { ...start, action: { ...start.action, value: 200 } } })])).length).toBeGreaterThan(0)
+  })
+
+  it('leaves tracks without one unchanged', () => {
+    expect('start' in sanitizeLibrary(lib()).tracks[0]).toBe(false)
+  })
+})
+
 describe('sanitizeLibrary', () => {
   it('drops unknown fields and sorts cues by time', () => {
     const t = track({

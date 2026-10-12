@@ -4,6 +4,7 @@ export const IPC = {
   pickAudio: 'track:pick-audio',
   arm: 'player:arm',
   lead: 'player:lead',
+  startPreset: 'player:start-preset',
   fileClock: 'player:file-clock',
   playback: 'player:playback',
   cueFired: 'player:cue-fired',

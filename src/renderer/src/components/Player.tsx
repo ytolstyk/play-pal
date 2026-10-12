@@ -48,8 +48,12 @@ const isStoredHeight = (v: unknown): v is string => {
 }
 const loadYtHeight = (): number => Number(loadStored(YT_HEIGHT.storageKey, isStoredHeight, String(YT_HEIGHT.default)))
 
+const NON_TEXT_INPUTS = ['range', 'button', 'checkbox', 'radio']
 const isTypingTarget = (t: EventTarget | null): boolean =>
-  t instanceof HTMLElement && ['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(t.tagName)
+  t instanceof HTMLElement &&
+  (t.isContentEditable ||
+    ['SELECT', 'TEXTAREA'].includes(t.tagName) ||
+    (t instanceof HTMLInputElement && !NON_TEXT_INPUTS.includes(t.type)))
 
 export function Player({ track, suspendVideo, onChange }: Props): React.JSX.Element {
   const { state, clock, timeRef, audioRef, starting, toggle, restart, seek, setRate, setVolume } = usePlayback(track)
@@ -163,8 +167,16 @@ export function Player({ track, suspendVideo, onChange }: Props): React.JSX.Elem
         toggle()
       } else if (e.code === 'KeyM') addCue()
     }
+    // A focused button would otherwise also "click" on Space keyup.
+    const onKeyUp = (e: KeyboardEvent): void => {
+      if (e.code === 'Space' && !suspendVideo && !isTypingTarget(e.target)) e.preventDefault()
+    }
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    window.addEventListener('keyup', onKeyUp)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('keyup', onKeyUp)
+    }
   }, [toggle, addCue, suspendVideo])
 
   const changeCue = useCallback(

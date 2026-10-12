@@ -32,7 +32,7 @@
   },
   "build": {
     "appId": "com.local.playpal",
-    "productName": "Play-Pal",
+    "productName": "Play Pal",
     "directories": {
       "output": "dist"
     },

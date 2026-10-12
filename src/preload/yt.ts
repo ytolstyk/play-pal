@@ -12,6 +12,8 @@ const IDLE_RESEND_MS = 1000
 const FFT_SIZE = 1024
 const SMOOTHING = 0.6
 const AUDIO_FRAME_MS = 33
+/** Drift smaller than this is rounding, not a page reset. */
+const VOLUME_EPSILON = 0.005
 const MIN_RATE = 0.25
 const MAX_RATE = 2
 /** Only the real site may drive cues; a page reached by any other route reports nothing. */
@@ -20,10 +22,13 @@ const TRUSTED_ORIGIN = 'https://music.youtube.com'
 const video = (): HTMLVideoElement | null => document.querySelector('video')
 
 let lastSent = { t: -1, playing: false, rate: 1, at: 0 }
+/** Last volume the app asked for. The page resets its <video> volume on its own (track change, element swap), so it is re-applied on drift. */
+let wantedVolume: number | null = null
 
 setInterval(() => {
   const v = video()
   if (!v || location.origin !== TRUSTED_ORIGIN) return
+  if (wantedVolume !== null && Math.abs(v.volume - wantedVolume) > VOLUME_EPSILON) v.volume = wantedVolume
   const now = Date.now()
   const playing = !v.paused && !v.ended
   const unchanged = v.currentTime === lastSent.t && playing === lastSent.playing && v.playbackRate === lastSent.rate
@@ -106,8 +111,18 @@ ipcRenderer.on(COMMAND, (_e, command: { cmd?: string; value?: number }) => {
     setAnalysis(command.value === 1)
     return
   }
+  if (typeof command !== 'object' || command === null) return
+  // Recorded even before a <video> exists; the poll applies it once one appears.
+  if (command.cmd === 'volume' && typeof command.value === 'number' && Number.isFinite(command.value)) {
+    wantedVolume = Math.min(1, Math.max(0, command.value))
+    return
+  }
+  if (command.cmd === 'release-volume') {
+    wantedVolume = null
+    return
+  }
   const v = video()
-  if (!v || typeof command !== 'object' || command === null) return
+  if (!v) return
   switch (command.cmd) {
     case 'play':
       void v.play().catch(() => undefined)
@@ -120,9 +135,6 @@ ipcRenderer.on(COMMAND, (_e, command: { cmd?: string; value?: number }) => {
       break
     case 'rate':
       if (typeof command.value === 'number') v.playbackRate = Math.min(MAX_RATE, Math.max(MIN_RATE, command.value))
-      break
-    case 'volume':
-      if (typeof command.value === 'number' && Number.isFinite(command.value)) v.volume = Math.min(1, Math.max(0, command.value))
       break
   }
 })

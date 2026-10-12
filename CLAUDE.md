@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Play-Pal: an Electron app that plays a track (local file or YouTube Music) and fires MIDI cues at saved timestamps, so Neural DSP presets switch while you play along. Sibling of `../midi-controller` (keyboard-to-MIDI); the two are separate apps with separate virtual ports ("Play-Pal" here), and the plugin/DAW listens to both.
+Play Pal: an Electron app that plays a track (local file or YouTube Music) and fires MIDI cues at saved timestamps, so Neural DSP presets switch while you play along. Sibling of `../midi-controller` (keyboard-to-MIDI); the two are separate apps with separate virtual ports ("Play Pal" here), and the plugin/DAW listens to both.
 
 ## Commands
 

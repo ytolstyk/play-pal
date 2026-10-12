@@ -92,11 +92,13 @@ export type YtCommand =
   | { cmd: 'seek'; value: number }
   | { cmd: 'rate'; value: number }
   | { cmd: 'volume'; value: number }
+  /** Stop holding the page's volume at the last one set (a track with no saved volume keeps YouTube's own level). */
+  | { cmd: 'release-volume' }
   /** 1 starts streaming analyser frames from the page, 0 stops. */
   | { cmd: 'analyse'; value: 0 | 1 }
 
 export const DEFAULT_VOLUME = 1
-export const PORT_BASE_NAME = 'Play-Pal'
+export const PORT_BASE_NAME = 'Play Pal'
 export const NOTE_OFF_DELAY_MS = 100
 export const MAX_LEAD_MS = 1000
 export const MAX_START_WAIT_MS = 5000

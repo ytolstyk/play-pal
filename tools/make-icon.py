@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Renders build/icon.png and build/icon.icns (macOS) for Play-Pal.
+"""Renders build/icon.png and build/icon.icns (macOS) for Play Pal.
 
 A dark app tile with a waveform; the "played" part glows amber, one bar is a green cue marker,
 and a play triangle sits on top. Needs Pillow and macOS `iconutil`. Re-run only to change the design:

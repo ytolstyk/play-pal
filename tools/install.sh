@@ -1,9 +1,9 @@
 #!/bin/bash
-# Build, ad-hoc sign and install Play-Pal into /Applications (Apple Silicon).
+# Build, ad-hoc sign and install Play Pal into /Applications (Apple Silicon).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-APP_NAME="Play-Pal"
+APP_NAME="Play Pal"
 BUNDLE_ID="com.local.playpal"
 BUILT="dist/mac-arm64/$APP_NAME.app"
 DEST="/Applications/$APP_NAME.app"

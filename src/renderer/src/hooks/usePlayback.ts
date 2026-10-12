@@ -190,7 +190,8 @@ export function usePlayback(track: Track): Playback {
   const loaded = state.duration > 0
   useEffect(() => {
     if (volume !== undefined) command({ cmd: 'volume', value: volume })
-  }, [command, volume, track.id, loaded])
+    else if (!isFile) window.api.ytCommand({ cmd: 'release-volume' })
+  }, [command, isFile, volume, track.id, loaded])
 
   return { state, clock, timeRef, audioRef, starting, toggle, restart, seek, setRate, setVolume }
 }

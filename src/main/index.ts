@@ -66,7 +66,7 @@ const runner = new CueRunner((cue: Cue) => {
   return sent
 })
 const yt = new YtPlayer(() => win)
-// Same data folder whether run from source or installed (the installed app's name is "Play-Pal").
+// Same data folder whether run from source or installed (the installed app's name is "Play Pal").
 app.setPath('userData', join(app.getPath('appData'), 'play-pal'))
 const store = new LibraryStore(join(app.getPath('userData'), 'library.json'))
 
@@ -86,7 +86,7 @@ function createWindow(): void {
     height: WINDOW.height,
     minWidth: WINDOW.minWidth,
     minHeight: WINDOW.minHeight,
-    title: 'Play-Pal',
+    title: 'Play Pal',
     backgroundColor: WINDOW.background,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),

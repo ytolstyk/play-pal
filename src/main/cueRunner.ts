@@ -1,5 +1,5 @@
-import { sortedByTime } from '../shared/cues'
-import type { ClockSample, Cue, MidiAction } from '../shared/types'
+import { START_CUE_ID, START_PRESET_LABEL, sortedByTime } from '../shared/cues'
+import type { ClockSample, Cue, StartPreset } from '../shared/types'
 
 /** A sample further than this from where we expected the player to be means the user seeked or looped. */
 const SEEK_TOLERANCE_S = 0.3
@@ -14,7 +14,7 @@ const STALE_MS = 2000
 const RETRY_MS = 100
 
 /** Id of the pseudo-cue that stands for the track's start preset. */
-export const START_CUE_ID = 'start-preset'
+export { START_CUE_ID }
 
 interface Base {
   t: number
@@ -51,7 +51,7 @@ export class CueRunner {
   /** `fire` reports whether the MIDI actually went out; a failed send leaves the cue unfired. */
   constructor(private readonly fire: (cue: Cue) => boolean) {}
 
-  select(trackId: string | null, cues: Cue[], start: MidiAction | null = null): void {
+  select(trackId: string | null, cues: Cue[], start: StartPreset | null = null): void {
     this.trackId = trackId
     this.cues = sortedByTime(cues)
     this.base = null
@@ -62,14 +62,16 @@ export class CueRunner {
     this.start = this.startCue(start)
   }
 
-  private startCue(action: MidiAction | null): Cue | null {
-    return action ? { id: START_CUE_ID, time: 0, label: 'Start preset', action } : null
+  private startCue(start: StartPreset | null): Cue | null {
+    return start
+      ? { id: START_CUE_ID, time: 0, label: start.label || START_PRESET_LABEL, action: start.action, ...(start.color ? { color: start.color } : {}) }
+      : null
   }
 
   /** Cues edited while a track is open; position and "already fired" state are kept. */
-  setCues(cues: Cue[], start: MidiAction | null = null): void {
+  setCues(cues: Cue[], start: StartPreset | null = null): void {
     // An edited or removed start preset is no longer the loaded one: the next rewind must resend.
-    if (this.activeId === START_CUE_ID && JSON.stringify(start) !== JSON.stringify(this.start?.action ?? null)) {
+    if (this.activeId === START_CUE_ID && JSON.stringify(start?.action ?? null) !== JSON.stringify(this.start?.action ?? null)) {
       this.activeId = null
     }
     this.start = this.startCue(start)

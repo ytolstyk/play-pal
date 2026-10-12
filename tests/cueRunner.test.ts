@@ -280,7 +280,7 @@ describe('CueRunner', () => {
         fired.push(c.id)
         return true
       })
-      runner.select('T', [cue('a', 10)], startAction)
+      runner.select('T', [cue('a', 10)], { action: startAction, waitMs: 0 })
       return { runner, fired }
     }
 

@@ -212,10 +212,10 @@ function armTrack(raw: unknown): void {
   const sameSource = armed?.id === track.id && JSON.stringify(armed.source) === JSON.stringify(track.source)
   armed = track
   if (sameSource) {
-    runner.setCues(track.cues, track.start?.action ?? null)
+    runner.setCues(track.cues, track.start ?? null)
     return
   }
-  runner.select(track.id, track.cues, track.start?.action ?? null)
+  runner.select(track.id, track.cues, track.start ?? null)
   if (track.source.kind === 'ytmusic') yt.load(track.source.videoId, track.start !== undefined)
   else yt.unload()
   setKeepAwake(true)

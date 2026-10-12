@@ -303,7 +303,7 @@ export function Player({ track, suspendVideo, onChange }: Props): React.JSX.Elem
         </div>
       </div>
       <Wire variant="b" />
-      <Timeline clock={clock} duration={duration} cues={track.cues} firedId={firedId} onSeek={seek} />
+      <Timeline clock={clock} duration={duration} cues={track.cues} startColor={track.start?.color} firedId={firedId} onSeek={seek} />
       <Wire variant="c" />
       <StartPresetEditor start={track.start} onChange={(start) => onChange((t) => ({ ...t, start }))} />
       <CueList cues={track.cues} firedId={firedId} onChange={changeCue} onDelete={deleteCue} onSeek={seek} />

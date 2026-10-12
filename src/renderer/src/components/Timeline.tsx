@@ -1,6 +1,6 @@
 import { memo, type CSSProperties, useMemo, useRef, useState } from 'react'
 import { useClockTime, type Clock } from '../hooks/usePlayback'
-import { sortedByTime } from '../../../shared/cues'
+import { START_CUE_ID, sortedByTime } from '../../../shared/cues'
 import type { Cue } from '../../../shared/types'
 import { formatTime } from '../../../shared/time'
 
@@ -8,6 +8,7 @@ interface Props {
   clock: Clock
   duration: number
   cues: Cue[]
+  startColor?: string
   firedId: string | null
   onSeek(t: number): void
 }
@@ -16,7 +17,7 @@ interface Props {
  * Seek bar. Press-drag-release shows the target time while dragging and seeks on release. The drag
  * state lives here so pointer moves re-render only this component, not the whole player.
  */
-export const Timeline = memo(function Timeline({ clock, duration, cues, firedId, onSeek }: Props): React.JSX.Element {
+export const Timeline = memo(function Timeline({ clock, duration, cues, startColor, firedId, onSeek }: Props): React.JSX.Element {
   const t = useClockTime(clock)
   const [scrubT, setScrubT] = useState<number | null>(null)
   // The active pointer is the source of truth; scrubT only drives rendering.
@@ -50,7 +51,10 @@ export const Timeline = memo(function Timeline({ clock, duration, cues, firedId,
     scrubPointer.current = null
     setScrubT(null)
   }
-  const segments = useMemo(() => sortedByTime(cues), [cues])
+  const segments = useMemo(
+    () => [...(startColor ? [{ id: START_CUE_ID, time: 0, color: startColor }] : []), ...sortedByTime(cues)],
+    [cues, startColor]
+  )
   const frac = (x: number): number => (duration > 0 ? Math.min(1, Math.max(0, x / duration)) : 0)
   const pct = (x: number): string => `${frac(x) * 100}%`
 

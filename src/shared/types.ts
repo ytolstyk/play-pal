@@ -29,6 +29,10 @@ export type TrackSource =
 export interface StartPreset {
   action: MidiAction
   waitMs: number
+  /** Absent means "Start preset". */
+  label?: string
+  /** One of CUE_COLORS (#rrggbb). Absent means the theme accent. */
+  color?: string
 }
 
 export interface Track {

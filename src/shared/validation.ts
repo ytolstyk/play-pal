@@ -59,6 +59,8 @@ function validateStart(s: unknown): string[] {
   if (!isObject(s)) return ['start preset must be an object']
   const errors = validateAction(s.action).map((m) => `start preset: ${m}`)
   if (!isInt(s.waitMs, 0, MAX_START_WAIT_MS)) errors.push(`start wait must be 0-${MAX_START_WAIT_MS} ms`)
+  if (s.label !== undefined && (typeof s.label !== 'string' || s.label.length > MAX_LABEL)) errors.push('invalid start preset label')
+  if (s.color !== undefined && !isCueColor(s.color)) errors.push('invalid start preset color')
   return errors
 }
 
@@ -107,7 +109,12 @@ const pickAction = (a: MidiAction): MidiAction => ({
   number: a.number,
   value: a.value
 })
-const pickStart = (s: StartPreset): StartPreset => ({ action: pickAction(s.action), waitMs: s.waitMs })
+const pickStart = (s: StartPreset): StartPreset => ({
+  action: pickAction(s.action),
+  waitMs: s.waitMs,
+  ...(s.label?.trim() ? { label: s.label.trim() } : {}),
+  ...(isCueColor(s.color) ? { color: s.color } : {})
+})
 const pickCue = (c: Cue): Cue => ({ id: c.id, time: c.time, label: c.label, action: pickAction(c.action),
   ...(isCueColor(c.color) ? { color: c.color } : {})
 })

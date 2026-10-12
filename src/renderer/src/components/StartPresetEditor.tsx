@@ -1,7 +1,8 @@
-import { DEFAULT_CUE_ACTION } from '../../../shared/cues'
+import { DEFAULT_CUE_ACTION, START_PRESET_LABEL } from '../../../shared/cues'
 import { clampInt } from '../../../shared/guards'
-import { DEFAULT_START_WAIT_MS, MAX_START_WAIT_MS, type StartPreset } from '../../../shared/types'
+import { DEFAULT_START_WAIT_MS, MAX_LABEL, MAX_START_WAIT_MS, type StartPreset } from '../../../shared/types'
 import { ActionFields } from './ActionFields'
+import { ColorSwatches } from './ColorSwatches'
 
 interface Props {
   start: StartPreset | undefined
@@ -24,6 +25,15 @@ export function StartPresetEditor({ start, onChange }: Props): React.JSX.Element
       </label>
       {start ? (
         <>
+          <input
+            className="label"
+            value={start.label ?? ''}
+            placeholder={START_PRESET_LABEL}
+            maxLength={MAX_LABEL}
+            aria-label="Start preset name"
+            onChange={(e) => onChange({ ...start, label: e.target.value || undefined })}
+          />
+          <ColorSwatches color={start.color} onChange={(color) => onChange({ ...start, color })} />
           <ActionFields action={start.action} onChange={(action) => onChange({ ...start, action })} />
           <label className="num">
             then wait

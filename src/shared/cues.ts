@@ -23,3 +23,7 @@ export const isCueColor = (v: unknown): v is string => typeof v === 'string' && 
 
 /** Cue defaults for the first cue of a track. */
 export const DEFAULT_CUE_ACTION = { type: 'cc', channel: 1, number: 20, value: 127 } as const
+
+/** Id and default name of the pseudo-cue that stands for a track's start preset. */
+export const START_CUE_ID = 'start-preset'
+export const START_PRESET_LABEL = 'Start preset'

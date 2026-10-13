@@ -1,4 +1,5 @@
 import { memo, type CSSProperties, useMemo, useRef, useState } from 'react'
+import type { PendingSkip } from '../hooks/useSkip'
 import { useClockTime, type Clock } from '../hooks/usePlayback'
 import { START_CUE_ID, sortedByTime } from '../../../shared/cues'
 import type { Cue } from '../../../shared/types'
@@ -10,6 +11,8 @@ interface Props {
   cues: Cue[]
   startColor?: string
   firedId: string | null
+  /** A keyboard skip waiting to be applied: shown as a target line and a "+20s" badge. */
+  pendingSkip: PendingSkip | null
   onSeek(t: number): void
 }
 
@@ -17,7 +20,7 @@ interface Props {
  * Seek bar. Press-drag-release shows the target time while dragging and seeks on release. The drag
  * state lives here so pointer moves re-render only this component, not the whole player.
  */
-export const Timeline = memo(function Timeline({ clock, duration, cues, startColor, firedId, onSeek }: Props): React.JSX.Element {
+export const Timeline = memo(function Timeline({ clock, duration, cues, startColor, firedId, pendingSkip, onSeek }: Props): React.JSX.Element {
   const t = useClockTime(clock)
   const [scrubT, setScrubT] = useState<number | null>(null)
   // The active pointer is the source of truth; scrubT only drives rendering.
@@ -57,6 +60,16 @@ export const Timeline = memo(function Timeline({ clock, duration, cues, startCol
   )
   const frac = (x: number): number => (duration > 0 ? Math.min(1, Math.max(0, x / duration)) : 0)
   const pct = (x: number): string => `${frac(x) * 100}%`
+  // A drag wins over a pending keyboard skip; both show a line at the target time with a label.
+  const marker =
+    scrubT !== null
+      ? { at: scrubT, label: formatTime(scrubT) }
+      : pendingSkip
+        ? {
+            at: pendingSkip.target,
+            label: `${pendingSkip.delta < 0 ? '−' : '+'}${Math.abs(pendingSkip.delta)}s · ${formatTime(pendingSkip.target)}`
+          }
+        : null
 
   return (
     <div
@@ -85,11 +98,11 @@ export const Timeline = memo(function Timeline({ clock, duration, cues, startCol
       {cues.map((c) => (
         <div key={c.id} className={c.id === firedId ? 'marker fired' : 'marker'} style={{ left: pct(c.time), ...(c.color ? ({ '--cue': c.color } as CSSProperties) : {}) }} title={c.label} />
       ))}
-      {scrubT !== null && (
+      {marker && (
         <>
-          <div className="scrub-line" style={{ left: pct(scrubT) }} />
-          <div className="scrub-time mono" style={{ left: `clamp(34px, ${pct(scrubT)}, calc(100% - 34px))` }}>
-            {formatTime(scrubT)}
+          <div className="scrub-line" style={{ left: pct(marker.at) }} />
+          <div className="scrub-time mono" style={{ left: `clamp(34px, ${pct(marker.at)}, calc(100% - 34px))` }}>
+            {marker.label}
           </div>
         </>
       )}

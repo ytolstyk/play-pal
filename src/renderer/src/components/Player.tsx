@@ -6,6 +6,8 @@ import { DEFAULT_VOLUME, MAX_TITLE } from '../../../shared/types'
 import { useAudioFeed } from '../hooks/useAudioFeed'
 import { loadStored, saveStored } from '../storage'
 import { usePlayback } from '../hooks/usePlayback'
+import { useSkip } from '../hooks/useSkip'
+import { useStepper } from '../hooks/useStepper'
 import { isVizKind, VISUALIZERS, type VizKind } from '../visualizers/draw'
 import { Wire } from './Circuit'
 import { CueList } from './CueList'
@@ -48,6 +50,12 @@ const isStoredHeight = (v: unknown): v is string => {
 }
 const loadYtHeight = (): number => Number(loadStored(YT_HEIGHT.storageKey, isStoredHeight, String(YT_HEIGHT.default)))
 
+const VOLUME_STEP = 0.05
+const ARROW_KEYS = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']
+/** Focused sliders (volume, the video resize handle) use the arrows themselves. */
+const ownsArrowKeys = (t: EventTarget | null): boolean =>
+  t instanceof HTMLElement && ((t instanceof HTMLInputElement && t.type === 'range') || t.getAttribute('role') === 'separator')
+
 const NON_TEXT_INPUTS = ['range', 'button', 'checkbox', 'radio']
 const isTypingTarget = (t: EventTarget | null): boolean =>
   t instanceof HTMLElement &&
@@ -57,8 +65,29 @@ const isTypingTarget = (t: EventTarget | null): boolean =>
 
 export function Player({ track, suspendVideo, onChange }: Props): React.JSX.Element {
   const { state, clock, timeRef, audioRef, starting, toggle, restart, seek, setRate, setVolume } = usePlayback(track)
+  const { pending, skip, cancel: cancelSkip } = useSkip(seek, timeRef, state.duration, track.id)
+  // A direct seek (scrub, cue click) supersedes a skip still waiting out its debounce.
+  const seekTo = useCallback(
+    (t: number) => {
+      cancelSkip()
+      seek(t)
+    },
+    [cancelSkip, seek]
+  )
   const [firedId, setFiredId] = useState<string | null>(null)
   const [draftVolume, setDraftVolume] = useState<number | null>(null)
+  const volume = draftVolume ?? track.volume ?? DEFAULT_VOLUME
+  const { pending: pendingVolume, press: stepVolume, cancel: cancelVolume } = useStepper({
+    step: VOLUME_STEP,
+    min: 0,
+    max: 1,
+    read: () => volume,
+    apply: (v) => {
+      setVolume(v)
+      onChange((t) => ({ ...t, volume: v }))
+    },
+    resetKey: track.id
+  })
   const [ytHeight, setYtHeight] = useState(loadYtHeight)
   const slotRef = useRef<HTMLDivElement>(null)
   const isYt = track.source.kind === 'ytmusic'
@@ -72,9 +101,9 @@ export function Player({ track, suspendVideo, onChange }: Props): React.JSX.Elem
   // Dragging applies the volume live; it is saved on the track once, on release.
   const commitVolume = (): void => {
     if (draftVolume === null) return
-    const volume = draftVolume
+    const saved = draftVolume
     setDraftVolume(null)
-    onChange((t) => ({ ...t, volume }))
+    onChange((t) => ({ ...t, volume: saved }))
   }
 
   const changeYtHeight = (h: number): void => {
@@ -166,6 +195,18 @@ export function Player({ track, suspendVideo, onChange }: Props): React.JSX.Elem
         e.preventDefault()
         toggle()
       } else if (e.code === 'KeyM') addCue()
+      else if (ARROW_KEYS.includes(e.code)) {
+        if (ownsArrowKeys(e.target)) return
+        e.preventDefault()
+        // One tap = one step; a held key must not run away at key-repeat rate.
+        if (e.repeat) return
+        const dir = e.code === 'ArrowRight' || e.code === 'ArrowUp' ? 1 : -1
+        // The start preset is for the beginning; don't move the playhead while it loads.
+        if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
+          if (!starting) skip(dir)
+        }
+        else stepVolume(dir)
+      }
     }
     // A focused button would otherwise also "click" on Space keyup.
     const onKeyUp = (e: KeyboardEvent): void => {
@@ -177,7 +218,13 @@ export function Player({ track, suspendVideo, onChange }: Props): React.JSX.Elem
       window.removeEventListener('keydown', onKey)
       window.removeEventListener('keyup', onKeyUp)
     }
-  }, [toggle, addCue, suspendVideo])
+  }, [toggle, addCue, skip, stepVolume, suspendVideo])
+
+  useEffect(() => {
+    if (!suspendVideo) return
+    cancelSkip()
+    cancelVolume()
+  }, [suspendVideo, cancelSkip, cancelVolume])
 
   const changeCue = useCallback(
     (id: string, change: Partial<Cue>) =>
@@ -289,24 +336,29 @@ export function Player({ track, suspendVideo, onChange }: Props): React.JSX.Elem
               min={0}
               max={1}
               step={0.01}
-              value={draftVolume ?? track.volume ?? DEFAULT_VOLUME}
+              value={pendingVolume?.target ?? volume}
               onChange={(e) => {
-                const volume = Number(e.target.value)
-                setDraftVolume(volume)
-                setVolume(volume)
+                const next = Number(e.target.value)
+                cancelVolume()
+                setDraftVolume(next)
+                setVolume(next)
               }}
               onPointerUp={commitVolume}
               onKeyUp={commitVolume}
               onBlur={commitVolume}
             />
+            <span className="mono volume-readout">
+              {Math.round((pendingVolume?.target ?? volume) * 100)}%
+              {pendingVolume && ` (${pendingVolume.delta < 0 ? '−' : '+'}${Math.round(Math.abs(pendingVolume.delta) * 100)})`}
+            </span>
           </label>
         </div>
       </div>
       <Wire variant="b" />
-      <Timeline clock={clock} duration={duration} cues={track.cues} startColor={track.start?.color} firedId={firedId} onSeek={seek} />
+      <Timeline clock={clock} duration={duration} cues={track.cues} startColor={track.start?.color} firedId={firedId} pendingSkip={pending} onSeek={seekTo} />
       <Wire variant="c" />
       <StartPresetEditor start={track.start} onChange={(start) => onChange((t) => ({ ...t, start }))} />
-      <CueList cues={track.cues} firedId={firedId} onChange={changeCue} onDelete={deleteCue} onSeek={seek} />
+      <CueList cues={track.cues} firedId={firedId} onChange={changeCue} onDelete={deleteCue} onSeek={seekTo} />
     </section>
   )
 }

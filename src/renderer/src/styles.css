@@ -162,3 +162,4 @@ html[data-playing] .pulse { opacity: 0.5; animation: pulse 5s linear infinite; }
 .start-preset > label:first-child { display: flex; align-items: center; gap: 6px; font-weight: 500; margin-right: 6px; }
 .start-preset .num { display: flex; align-items: center; gap: 4px; color: var(--muted); font-size: 12px; }
 .start-preset .num input { width: 64px; padding: 4px 6px; }
+.volume-readout { display: inline-block; min-width: 9ch; }

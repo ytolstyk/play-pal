@@ -1,9 +1,20 @@
-import { memo, type CSSProperties, useMemo, useRef, useState } from 'react'
+import { memo, type CSSProperties, useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
 import type { PendingSkip } from '../hooks/useSkip'
+import { useCueDrag, type CueDrag } from '../hooks/useCueDrag'
+import { useScrub } from '../hooks/useScrub'
+import { useTimelineGestures } from '../hooks/useTimelineGestures'
+import { useTimelineView } from '../hooks/useTimelineView'
 import { useClockTime, type Clock } from '../hooks/usePlayback'
+import type { Waveform } from '../hooks/useWaveform'
+import { fractionOf } from '../timelineView'
 import { START_CUE_ID, sortedByTime } from '../../../shared/cues'
+import { clamp } from '../../../shared/guards'
 import type { Cue } from '../../../shared/types'
 import { formatTime } from '../../../shared/time'
+import { displayCeiling } from '../../../shared/waveform'
+import { TimelineOverview } from './TimelineOverview'
+import { TimelineToolbar } from './TimelineToolbar'
+import { WaveCanvas } from './WaveCanvas'
 
 interface Props {
   clock: Clock
@@ -13,99 +24,156 @@ interface Props {
   firedId: string | null
   /** A keyboard skip waiting to be applied: shown as a target line and a "+20s" badge. */
   pendingSkip: PendingSkip | null
+  playing: boolean
+  wave: Waveform
+  /** False while a modal is open: the zoom keys are ignored. */
+  keysEnabled: boolean
   onSeek(t: number): void
+  onMoveCue(id: string, time: number): void
 }
 
-/**
- * Seek bar. Press-drag-release shows the target time while dragging and seeks on release. The drag
- * state lives here so pointer moves re-render only this component, not the whole player.
- */
-export const Timeline = memo(function Timeline({ clock, duration, cues, startColor, firedId, pendingSkip, onSeek }: Props): React.JSX.Element {
-  const t = useClockTime(clock)
-  const [scrubT, setScrubT] = useState<number | null>(null)
-  // The active pointer is the source of truth; scrubT only drives rendering.
-  const scrubPointer = useRef<number | null>(null)
+interface Marker {
+  at: number
+  label: string
+}
 
-  const timeAt = (e: React.PointerEvent<HTMLDivElement>): number => {
-    const r = e.currentTarget.getBoundingClientRect()
-    return Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)) * duration
-  }
-  const scrubStart = (e: React.PointerEvent<HTMLDivElement>): void => {
-    if (duration <= 0 || e.button !== 0 || scrubPointer.current !== null) return
-    scrubPointer.current = e.pointerId
-    try {
-      e.currentTarget.setPointerCapture(e.pointerId)
-    } catch {
-      // pointer already gone; the drag still ends on pointerup/cancel
-    }
-    setScrubT(timeAt(e))
-  }
-  const scrubMove = (e: React.PointerEvent<HTMLDivElement>): void => {
-    if (e.pointerId === scrubPointer.current) setScrubT(timeAt(e))
-  }
-  const scrubEnd = (e: React.PointerEvent<HTMLDivElement>): void => {
-    if (e.pointerId !== scrubPointer.current || e.button !== 0) return
-    scrubPointer.current = null
-    onSeek(timeAt(e))
-    setScrubT(null)
-  }
-  const scrubCancel = (e: React.PointerEvent<HTMLDivElement>): void => {
-    if (e.pointerId !== scrubPointer.current) return
-    scrubPointer.current = null
-    setScrubT(null)
-  }
-  const segments = useMemo(
-    () => [...(startColor ? [{ id: START_CUE_ID, time: 0, color: startColor }] : []), ...sortedByTime(cues)],
-    [cues, startColor]
+const skipLabel = ({ delta, target }: PendingSkip): string => `${delta < 0 ? '−' : '+'}${Math.abs(delta)}s · ${formatTime(target)}`
+
+/** The line and label shown at a target time: a cue drag wins over a scrub, and a scrub over a pending keyboard skip. */
+function activeMarker(drag: CueDrag | null, scrubT: number | null, pendingSkip: PendingSkip | null): Marker | null {
+  if (drag) return { at: drag.t, label: formatTime(drag.t) }
+  if (scrubT !== null) return { at: scrubT, label: formatTime(scrubT) }
+  if (pendingSkip) return { at: pendingSkip.target, label: skipLabel(pendingSkip) }
+  return null
+}
+
+// The cast is safe: `--cue` is a custom property, which CSSProperties just doesn't know about.
+const cueStyle = (color: string | undefined, left: string): CSSProperties => ({ left, ...(color ? ({ '--cue': color } as CSSProperties) : {}) })
+
+/**
+ * Waveform seek bar. Press-drag-release on the waveform seeks. Cues are moved by their handles
+ * under the waveform, never by the waveform itself. Scroll to zoom (or +/-), scroll sideways to pan.
+ */
+export const Timeline = memo(function Timeline({
+  clock,
+  duration,
+  cues,
+  startColor,
+  firedId,
+  pendingSkip,
+  playing,
+  wave,
+  keysEnabled,
+  onSeek,
+  onMoveCue
+}: Props): React.JSX.Element {
+  const playhead = useClockTime(clock)
+  const view = useTimelineView(duration)
+  const stageRef = useRef<HTMLDivElement>(null)
+  const plotRef = useRef<HTMLDivElement>(null)
+  const revision = useSyncExternalStore(wave.subscribe, wave.revision)
+  const bins = wave.recorder?.bins ?? null
+
+  /** Track time under a pointer x, within what is on screen. */
+  const timeAt = useCallback(
+    (clientX: number): number => {
+      const rect = plotRef.current?.getBoundingClientRect()
+      const current = view.viewRef.current
+      if (!rect || rect.width <= 0) return 0
+      return current.start + clamp((clientX - rect.left) / rect.width, 0, 1) * current.span
+    },
+    [view.viewRef]
   )
-  const frac = (x: number): number => (duration > 0 ? Math.min(1, Math.max(0, x / duration)) : 0)
-  const pct = (x: number): string => `${frac(x) * 100}%`
-  // A drag wins over a pending keyboard skip; both show a line at the target time with a label.
-  const marker =
-    scrubT !== null
-      ? { at: scrubT, label: formatTime(scrubT) }
-      : pendingSkip
-        ? {
-            at: pendingSkip.target,
-            label: `${pendingSkip.delta < 0 ? '−' : '+'}${Math.abs(pendingSkip.delta)}s · ${formatTime(pendingSkip.target)}`
-          }
-        : null
+  const { scrubT, handlers: scrubHandlers } = useScrub(timeAt, duration > 0, onSeek)
+  const { drag, handlersFor } = useCueDrag({ timeAt, duration, plotRef, viewRef: view.viewRef, pan: view.pan, onMove: onMoveCue })
+  const { zoomAtPlayhead } = useTimelineGestures({ stageRef, plotRef, view, clock, duration, keysEnabled })
+
+  // While playing, a zoomed view turns the page when the playhead runs off it (unless the user is busy or scrolled away).
+  const { follow, zoomed, reveal } = view
+  const busy = drag !== null || scrubT !== null
+  useEffect(() => {
+    if (follow && playing && zoomed && !busy) reveal(playhead)
+  }, [playhead, follow, playing, zoomed, busy, reveal])
+
+  // The cue being dragged shows where it would land, so lines, colours and the order of segments follow it.
+  const shown = useMemo(() => (drag ? cues.map((c) => (c.id === drag.id ? { ...c, time: drag.t } : c)) : cues), [cues, drag])
+  const segments = useMemo(
+    () => [...(startColor ? [{ id: START_CUE_ID, time: 0, color: startColor }] : []), ...sortedByTime(shown)],
+    [shown, startColor]
+  )
+  // `bins` is edited in place, so `revision` is what says it changed.
+  const ceiling = useMemo(() => (bins ? displayCeiling(bins) : 1), [bins, revision])
+
+  const fraction = (x: number): number => fractionOf(view.view, x)
+  const pct = (x: number): string => `${fraction(x) * 100}%`
+  const onScreen = (x: number): boolean => fraction(x) >= 0 && fraction(x) <= 1
+  const visibleCues = shown.filter((c) => onScreen(c.time))
+  const marker = activeMarker(drag, scrubT, pendingSkip)
+  const played = clamp(fraction(playhead), 0, 1)
 
   return (
-    <div
-      className="timeline"
-      role="slider"
-      aria-label="Position"
-      aria-valuemin={0}
-      aria-valuemax={Math.round(duration)}
-      aria-valuenow={Math.round(t)}
-      onPointerDown={scrubStart}
-      onPointerMove={scrubMove}
-      onPointerUp={scrubEnd}
-      onPointerCancel={scrubCancel}
-      onLostPointerCapture={scrubCancel}
-    >
-      {segments.map((c, i) =>
-        c.color ? (
-          <div
-            key={c.id}
-            className="segment"
-            style={{ left: pct(c.time), right: `${(1 - frac(segments[i + 1]?.time ?? duration)) * 100}%`, background: c.color }}
-          />
-        ) : null
-      )}
-      <div className="played" style={{ transform: `scaleX(${frac(t)})` }} />
-      {cues.map((c) => (
-        <div key={c.id} className={c.id === firedId ? 'marker fired' : 'marker'} style={{ left: pct(c.time), ...(c.color ? ({ '--cue': c.color } as CSSProperties) : {}) }} title={c.label} />
-      ))}
-      {marker && (
-        <>
-          <div className="scrub-line" style={{ left: pct(marker.at) }} />
-          <div className="scrub-time mono" style={{ left: `clamp(34px, ${pct(marker.at)}, calc(100% - 34px))` }}>
-            {marker.label}
+    <div className="timeline-block">
+      <div className="timeline-stage" ref={stageRef}>
+        <div
+          id="timeline"
+          className="timeline"
+          role="slider"
+          aria-label="Position"
+          aria-valuemin={0}
+          aria-valuemax={Math.round(duration)}
+          aria-valuenow={Math.round(playhead)}
+          {...scrubHandlers}
+        >
+          <div className="timeline-plot" ref={plotRef}>
+            {segments.map((c, i) => {
+              if (!c.color) return null
+              const from = fraction(c.time)
+              const to = fraction(segments[i + 1]?.time ?? duration)
+              if (to <= 0 || from >= 1) return null
+              return <div key={c.id} className="segment" style={{ left: `${clamp(from, 0, 1) * 100}%`, right: `${(1 - clamp(to, 0, 1)) * 100}%`, background: c.color }} />
+            })}
+            <div className="played" style={{ transform: `scaleX(${played})`, ...(onScreen(playhead) ? {} : { borderRightWidth: 0 }) }} />
+            <WaveCanvas bins={bins} revision={revision} view={view.view} ceiling={ceiling} tone="idle" />
+            <div className="wave-clip" style={{ clipPath: `inset(0 ${(1 - played) * 100}% 0 0)` }}>
+              <WaveCanvas bins={bins} revision={revision} view={view.view} ceiling={ceiling} tone="played" />
+            </div>
+            {visibleCues.map((c) => (
+              <div key={c.id} className={c.id === firedId ? 'marker fired' : 'marker'} style={cueStyle(c.color, pct(c.time))} />
+            ))}
+            {marker && onScreen(marker.at) && <div className="scrub-line" style={{ left: pct(marker.at) }} />}
           </div>
-        </>
-      )}
+          {marker && (
+            <div className="scrub-time mono" style={{ left: `clamp(34px, ${fraction(marker.at) * 100}%, calc(100% - 34px))` }}>
+              {marker.label}
+            </div>
+          )}
+        </div>
+        {/* Below the waveform on purpose: a cue can only be picked up here, so clicking to seek never moves one. */}
+        <div className="handle-lane">
+          {visibleCues.map((c) => (
+            <div
+              key={c.id}
+              className={c.id === drag?.id ? 'handle dragging' : 'handle'}
+              style={cueStyle(c.color, pct(c.time))}
+              title={`${c.label} · ${formatTime(c.time)}. Drag to move`}
+              aria-label={`Move cue ${c.label}`}
+              {...handlersFor(c)}
+            />
+          ))}
+        </div>
+      </div>
+      {zoomed && <TimelineOverview bins={bins} revision={revision} ceiling={ceiling} duration={duration} view={view.view} t={playhead} onPan={view.scrollTo} />}
+      <TimelineToolbar
+        view={view.view}
+        duration={duration}
+        zoomed={zoomed}
+        follow={follow}
+        coverage={wave.recorder?.coverage ?? 0}
+        hasWaveform={bins !== null}
+        onZoom={zoomAtPlayhead}
+        onReset={view.reset}
+        onFollow={view.setFollow}
+      />
     </div>
   )
 })

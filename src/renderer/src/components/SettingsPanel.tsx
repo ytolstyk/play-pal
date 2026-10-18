@@ -1,17 +1,20 @@
 import { useEffect } from 'react'
 import { THEME_PRESETS, type Theme } from '../theme'
+import type { LibraryApi } from '../hooks/useLibrary'
+import { BackupsSection } from './BackupsSection'
 
 interface Props {
   theme: Theme
   onChange(theme: Theme): void
   limiter: boolean
   onLimiterChange(on: boolean): void
+  onReplaceLibrary: LibraryApi['replace']
   onClose(): void
 }
 
 const sameColor = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase()
 
-export function SettingsPanel({ theme, onChange, limiter, onLimiterChange, onClose }: Props): React.JSX.Element {
+export function SettingsPanel({ theme, onChange, limiter, onLimiterChange, onReplaceLibrary, onClose }: Props): React.JSX.Element {
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') onClose()
@@ -68,6 +71,7 @@ export function SettingsPanel({ theme, onChange, limiter, onLimiterChange, onClo
             Limiter (tames loud bursts)
           </label>
         </div>
+        <BackupsSection replace={onReplaceLibrary} />
       </section>
     </>
   )

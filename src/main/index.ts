@@ -16,7 +16,9 @@ import { pathToFileURL } from 'node:url'
 import { ActionSender } from './actionSender'
 import { CueRunner } from './cueRunner'
 import { VirtualPort } from './midi'
+import { BackupStore, readLibraryFile } from './backups'
 import { LibraryStore } from './store'
+import { WaveformStore } from './waveformStore'
 import { YtPlayer } from './ytPlayer'
 import { IPC, YT_PAGE } from '../shared/ipc'
 import { clampInt } from '../shared/guards'
@@ -30,10 +32,12 @@ import {
   type LoadResult,
   type MidiAction,
   type MidiStatus,
+  type RestoreResult,
   type SaveResult,
   type Track
 } from '../shared/types'
-import { emptyLibrary, sanitizeLibrary, validateAction, validateLibrary, validateTrack } from '../shared/validation'
+import { emptyLibrary, isTrackId, sanitizeLibrary, validateAction, validateLibrary, validateTrack } from '../shared/validation'
+import { MAX_WAVE_BINS } from '../shared/waveform'
 
 const WINDOW = { width: 1280, height: 860, minWidth: 980, minHeight: 640, background: '#121316' }
 const UNTRUSTED = 'untrusted sender'
@@ -68,7 +72,8 @@ const runner = new CueRunner((cue: Cue) => {
 const yt = new YtPlayer(() => win)
 // Same data folder whether run from source or installed (the installed app's name is "Play Pal").
 app.setPath('userData', join(app.getPath('appData'), 'play-pal'))
-const store = new LibraryStore(join(app.getPath('userData'), 'library.json'))
+const store = new LibraryStore(join(app.getPath('userData'), 'library.json'), new BackupStore(join(app.getPath('userData'), 'backups')))
+const waveforms = new WaveformStore(join(app.getPath('userData'), 'waveforms'))
 
 function pushToWindow(channel: string, payload: unknown): void {
   // The window can be gone mid-quit; pushes must never throw.
@@ -221,12 +226,12 @@ function armTrack(raw: unknown): void {
   setKeepAwake(true)
 }
 
-async function saveLibrary(raw: unknown): Promise<SaveResult> {
+async function saveLibrary(raw: unknown, write: (lib: Library) => Promise<void> = (lib) => store.save(lib)): Promise<SaveResult> {
   const errors = validateLibrary(raw)
   if (errors.length > 0) return { ok: false, errors }
   const next = sanitizeLibrary(raw as Library)
   try {
-    await store.save(next)
+    await write(next)
   } catch (err) {
     return { ok: false, errors: [`could not save: ${err instanceof Error ? err.message : String(err)}`] }
   }
@@ -236,24 +241,66 @@ async function saveLibrary(raw: unknown): Promise<SaveResult> {
 
 /** Saves run one at a time so a slow write can't overwrite a newer one. */
 let saveChain: Promise<unknown> = Promise.resolve()
-const saveInOrder = (raw: unknown): Promise<SaveResult> => {
-  const run = saveChain.then(() => saveLibrary(raw))
+const inOrder = <T>(job: () => Promise<T>): Promise<T> => {
+  const run = saveChain.then(job)
   saveChain = run.catch(() => undefined)
   return run
+}
+const saveInOrder = (raw: unknown): Promise<SaveResult> => inOrder(() => saveLibrary(raw))
+
+const failedRestore = (error: string, warnings: string[] = []): RestoreResult => ({ ok: false, errors: [error], warnings, tracks: 0 })
+
+/** What the runner and the armed track follow when the whole library is swapped from under them. */
+function applyLibrary(next: Library): void {
+  library = next
+  runner.setLeadMs(next.leadMs)
+  if (armed && !next.tracks.some((t) => t.id === armed?.id)) disarm()
+}
+
+/** Makes a library read from a backup or a chosen file the current one; what it replaces is kept as a backup first. */
+async function adoptLibrary(imported: LoadResult | null): Promise<RestoreResult> {
+  if (!imported) return failedRestore('that is not a Play Pal library file')
+  if (imported.tracks.length === 0) return failedRestore('no tracks could be recovered from it', imported.warnings)
+  const { warnings, ...recovered } = imported
+  const saved = await inOrder(() => saveLibrary(recovered, (lib) => store.replace(lib)))
+  if (!saved.ok) return { ok: false, errors: saved.errors, warnings, tracks: 0 }
+  applyLibrary(recovered)
+  return { ok: true, errors: [], warnings, tracks: recovered.tracks.length, library: recovered }
+}
+
+async function importFromFile(): Promise<RestoreResult | null> {
+  if (!win) return null
+  const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+    properties: ['openFile'],
+    filters: [
+      { name: 'Play Pal library', extensions: ['json', 'bak', 'corrupt'] },
+      { name: 'All files', extensions: ['*'] }
+    ]
+  })
+  return canceled || !filePaths[0] ? null : adoptLibrary(await readLibraryFile(filePaths[0]))
 }
 
 async function loadLibrary(): Promise<LoadResult> {
   const result = await store.load()
-  library = { tracks: result.tracks, leadMs: result.leadMs }
-  runner.setLeadMs(library.leadMs)
+  applyLibrary({ tracks: result.tracks, leadMs: result.leadMs })
+  // A reset, unreadable or partly dropped library would make cached waveforms look orphaned.
+  if (result.warnings.length === 0 && library.tracks.length > 0) void waveforms.prune(new Set(library.tracks.map((t) => t.id)))
   return result
 }
+
+/** A waveform belongs to a saved library track (a new track is saved before it is opened). */
+const knowsTrack = (id: unknown): id is string => isTrackId(id) && library.tracks.some((t) => t.id === id)
 
 function registerIpc(): void {
   ipcMain.handle(IPC.libraryLoad, (e) => (trusted(e) ? loadLibrary() : { ...emptyLibrary(), warnings: [UNTRUSTED] }))
   ipcMain.handle(IPC.librarySave, (e, raw: unknown) =>
     trusted(e) ? saveInOrder(raw) : { ok: false, errors: [UNTRUSTED] }
   )
+  ipcMain.handle(IPC.backupList, (e) => (trusted(e) ? store.backups.list() : []))
+  ipcMain.handle(IPC.backupRestore, async (e, id: unknown): Promise<RestoreResult> =>
+    trusted(e) ? adoptLibrary(await store.backups.read(id)) : failedRestore(UNTRUSTED)
+  )
+  ipcMain.handle(IPC.backupImport, (e) => (trusted(e) ? importFromFile() : null))
   ipcMain.handle(IPC.pickAudio, async (e): Promise<string | null> => {
     if (!trusted(e) || !win) return null
     const { canceled, filePaths } = await dialog.showOpenDialog(win, {
@@ -285,6 +332,17 @@ function registerIpc(): void {
     if (trusted(e) && command) yt.command(command)
   })
   ipcMain.on(IPC.ytReturn, (e) => trusted(e) && yt.returnToTrack())
+  ipcMain.handle(IPC.waveformLoad, (e, id: unknown) => (trusted(e) && knowsTrack(id) ? waveforms.load(id) : null))
+  ipcMain.handle(IPC.waveformSave, async (e, id: unknown, bins: unknown): Promise<boolean> => {
+    if (!trusted(e) || !knowsTrack(id) || !(bins instanceof Uint8Array) || bins.length > MAX_WAVE_BINS) return false
+    try {
+      await waveforms.save(id, bins)
+      return true
+    } catch (err) {
+      console.warn(`[waveform] could not save ${id}`, err)
+      return false
+    }
+  })
   ipcMain.handle(IPC.midiTest, (e, raw: unknown) => {
     if (trusted(e) && validateAction(raw).length === 0) sender.send(raw as MidiAction)
   })

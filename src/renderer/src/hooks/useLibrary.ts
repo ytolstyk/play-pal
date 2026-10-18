@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { Library } from '../../../shared/types'
+import type { Library, RestoreResult } from '../../../shared/types'
 
 const SAVE_DEBOUNCE_MS = 400
 
@@ -9,6 +9,12 @@ export interface LibraryApi {
   saveError: string | null
   /** Applies `change` to the latest library. `immediate` saves now and resolves to whether it stuck. */
   update(change: (lib: Library) => Library, immediate?: boolean): Promise<boolean>
+  /**
+   * Runs a restore or import done by main and shows the library it returns. A save still waiting
+   * is made first, so it is in the copy main keeps of what gets replaced; edits during the run are
+   * refused, and a second run while one is going resolves to null. Resolves to the run's result.
+   */
+  replace(run: () => Promise<RestoreResult | null>): Promise<RestoreResult | null>
 }
 
 /** Library state owned here; main persists it (debounced, or at once when a caller needs it durable). */
@@ -18,6 +24,8 @@ export function useLibrary(): LibraryApi {
   const [saveError, setSaveError] = useState<string | null>(null)
   const latest = useRef<Library | null>(null)
   const dirty = useRef(false)
+  /** A restore or import is running: edits made meanwhile would be lost under it, so they are refused. */
+  const replacing = useRef(false)
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   const persist = useCallback(async (lib: Library): Promise<boolean> => {
@@ -48,7 +56,7 @@ export function useLibrary(): LibraryApi {
 
   const update = useCallback(
     (change: (lib: Library) => Library, immediate = false): Promise<boolean> => {
-      if (!latest.current) return Promise.resolve(false)
+      if (!latest.current || replacing.current) return Promise.resolve(false)
       const next = change(latest.current)
       latest.current = next
       dirty.current = true
@@ -61,5 +69,31 @@ export function useLibrary(): LibraryApi {
     [persist]
   )
 
-  return { library, warnings, saveError, update }
+  const replace = useCallback(
+    async (run: () => Promise<RestoreResult | null>): Promise<RestoreResult | null> => {
+      if (replacing.current) return null
+      replacing.current = true
+      // Main keeps a copy of the current file before replacing it, so what is still waiting goes into that file first.
+      clearTimeout(timer.current)
+      let result: RestoreResult | null
+      try {
+        if (dirty.current && latest.current) await persist(latest.current)
+        result = await run()
+      } catch (err) {
+        result = { ok: false, errors: [err instanceof Error ? err.message : String(err)], warnings: [], tracks: 0 }
+      } finally {
+        replacing.current = false
+      }
+      if (result?.ok) {
+        latest.current = result.library
+        setLibrary(result.library)
+        setWarnings([])
+        setSaveError(null)
+      }
+      return result
+    },
+    [persist]
+  )
+
+  return { library, warnings, saveError, update, replace }
 }

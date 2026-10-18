@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { parseLibraryFile, sanitizeLibrary, validateAction, validateLibrary } from '../src/shared/validation'
+import { parseLibraryFile } from '../src/shared/libraryImport'
+import { sanitizeLibrary, validateAction, validateLibrary } from '../src/shared/validation'
 import { parseVideoId } from '../src/shared/url'
 import { formatTime, parseTime } from '../src/shared/time'
 import type { Library, Track } from '../src/shared/types'
@@ -79,7 +80,7 @@ describe('parseLibraryFile', () => {
     const result = parseLibraryFile({
       schemaVersion: 1,
       leadMs: 50,
-      tracks: [track(), track({ id: 't2', title: 'x'.repeat(201) })]
+      tracks: [track(), track({ id: 't2', source: { kind: 'file', path: 'relative.mp3' } })]
     })
     expect(result.tracks.map((t) => t.id)).toEqual(['t1'])
     expect(result.leadMs).toBe(50)

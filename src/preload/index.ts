@@ -16,6 +16,9 @@ const subscribe =
 const api: Api = {
   loadLibrary: () => ipcRenderer.invoke(IPC.libraryLoad),
   saveLibrary: (library) => ipcRenderer.invoke(IPC.librarySave, library),
+  listBackups: () => ipcRenderer.invoke(IPC.backupList),
+  restoreBackup: (id) => ipcRenderer.invoke(IPC.backupRestore, id),
+  importLibraryFile: () => ipcRenderer.invoke(IPC.backupImport),
   pickAudioFile: () => ipcRenderer.invoke(IPC.pickAudio),
   armTrack: (track) => ipcRenderer.send(IPC.arm, track),
   sendStartPreset: (trackId) => ipcRenderer.invoke(IPC.startPreset, trackId),
@@ -27,6 +30,8 @@ const api: Api = {
   ytCommand: (command) => ipcRenderer.send(IPC.ytCommand, command),
   ytReturn: () => ipcRenderer.send(IPC.ytReturn),
   onAudioFrame: subscribe<AudioFrame>(IPC.audioFrame),
+  loadWaveform: (trackId) => ipcRenderer.invoke(IPC.waveformLoad, trackId),
+  saveWaveform: (trackId, bins) => ipcRenderer.invoke(IPC.waveformSave, trackId, bins),
   testAction: (action) => ipcRenderer.invoke(IPC.midiTest, action),
   getMidiStatus: () => ipcRenderer.invoke(IPC.midiStatus),
   onMidiStatus: subscribe<MidiStatus>(IPC.midiStatus),

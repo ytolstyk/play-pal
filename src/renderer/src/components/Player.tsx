@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Cue, Track } from '../../../shared/types'
 import { DEFAULT_CUE_ACTION, sortedByTime } from '../../../shared/cues'
-import { formatTime } from '../../../shared/time'
+import { formatTime, roundMs } from '../../../shared/time'
 import { DEFAULT_VOLUME, MAX_TITLE } from '../../../shared/types'
 import { useAudioFeed } from '../hooks/useAudioFeed'
+import { useWaveform, useWaveRecorder } from '../hooks/useWaveform'
+import { isTypingTarget } from '../keyboard'
 import { loadStored, saveStored } from '../storage'
 import { usePlayback } from '../hooks/usePlayback'
 import { useSkip } from '../hooks/useSkip'
@@ -56,13 +58,6 @@ const ARROW_KEYS = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']
 const ownsArrowKeys = (t: EventTarget | null): boolean =>
   t instanceof HTMLElement && ((t instanceof HTMLInputElement && t.type === 'range') || t.getAttribute('role') === 'separator')
 
-const NON_TEXT_INPUTS = ['range', 'button', 'checkbox', 'radio']
-const isTypingTarget = (t: EventTarget | null): boolean =>
-  t instanceof HTMLElement &&
-  (t.isContentEditable ||
-    ['SELECT', 'TEXTAREA'].includes(t.tagName) ||
-    (t instanceof HTMLInputElement && !NON_TEXT_INPUTS.includes(t.type)))
-
 export function Player({ track, suspendVideo, onChange }: Props): React.JSX.Element {
   const { state, clock, timeRef, audioRef, starting, toggle, restart, seek, setRate, setVolume } = usePlayback(track)
   const { pending, skip, cancel: cancelSkip } = useSkip(seek, timeRef, state.duration, track.id)
@@ -96,7 +91,10 @@ export function Player({ track, suspendVideo, onChange }: Props): React.JSX.Elem
   // Local files have no picture, so they always show the visualizer; YouTube Music can swap either way.
   // Hiding the video only hides its view: the page keeps playing underneath.
   const showViz = !isYt || view === 'visualizer'
-  const feed = useAudioFeed(isYt ? 'yt' : 'file', audioRef, showViz, state.playing)
+  // The waveform is recorded from the same feed; YouTube Music only streams it while something wants it.
+  const wave = useWaveform(track.id, state.duration, state.playing)
+  const feed = useAudioFeed(isYt ? 'yt' : 'file', audioRef, showViz || wave.wantsFrames, state.playing)
+  useWaveRecorder({ wave, feed, clock, playing: state.playing, rate: state.rate, volume })
 
   // Dragging applies the volume live; it is saved on the track once, on release.
   const commitVolume = (): void => {
@@ -180,7 +178,7 @@ export function Player({ track, suspendVideo, onChange }: Props): React.JSX.Elem
       const previous = sortedByTime(t.cues).pop()
       const cue: Cue = {
         id: crypto.randomUUID(),
-        time: Math.round(timeRef.current * 1000) / 1000,
+        time: roundMs(timeRef.current),
         label: `Cue ${t.cues.length + 1}`,
         action: previous?.action ?? DEFAULT_CUE_ACTION
       }
@@ -231,6 +229,7 @@ export function Player({ track, suspendVideo, onChange }: Props): React.JSX.Elem
       onChange((t) => ({ ...t, cues: t.cues.map((c) => (c.id === id ? { ...c, ...change } : c)) })),
     [onChange]
   )
+  const moveCue = useCallback((id: string, time: number) => changeCue(id, { time }), [changeCue])
   const deleteCue = useCallback(
     (id: string) => onChange((t) => ({ ...t, cues: t.cues.filter((c) => c.id !== id) })),
     [onChange]
@@ -355,7 +354,19 @@ export function Player({ track, suspendVideo, onChange }: Props): React.JSX.Elem
         </div>
       </div>
       <Wire variant="b" />
-      <Timeline clock={clock} duration={duration} cues={track.cues} startColor={track.start?.color} firedId={firedId} pendingSkip={pending} onSeek={seekTo} />
+      <Timeline
+        clock={clock}
+        duration={duration}
+        cues={track.cues}
+        startColor={track.start?.color}
+        firedId={firedId}
+        pendingSkip={pending}
+        playing={state.playing}
+        wave={wave}
+        keysEnabled={!suspendVideo}
+        onSeek={seekTo}
+        onMoveCue={moveCue}
+      />
       <Wire variant="c" />
       <StartPresetEditor start={track.start} onChange={(start) => onChange((t) => ({ ...t, start }))} />
       <CueList cues={track.cues} firedId={firedId} onChange={changeCue} onDelete={deleteCue} onSeek={seekTo} />

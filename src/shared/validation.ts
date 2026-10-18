@@ -6,6 +6,7 @@ import {
   MAX_CUES,
   MAX_LABEL,
   MAX_LEAD_MS,
+  MAX_TIME_S,
   MAX_START_WAIT_MS,
   MAX_TITLE,
   MAX_TRACKS,
@@ -14,17 +15,17 @@ import {
   MIDI_DATA_MAX,
   type Cue,
   type Library,
-  type LoadResult,
   type MidiAction,
   type StartPreset,
   type Track
 } from './types'
 
 const ID = /^[A-Za-z0-9-]{1,64}$/
+
+export const isTrackId = (v: unknown): v is string => typeof v === 'string' && ID.test(v)
 /** Absolute path; `//host/share` (UNC) is excluded so a stored path can never trigger an SMB fetch. */
 const ABSOLUTE_PATH = /^(?:[A-Za-z]:[\\/]|\/(?![\\/])|\\(?![\\/]))/
 const MAX_PATH = 2048
-const MAX_TIME_S = 24 * 60 * 60
 
 const isInt = (v: unknown, min: number, max: number): boolean =>
   typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max
@@ -134,25 +135,3 @@ export const sanitizeLibrary = (lib: Library): Library => ({
 })
 
 export const emptyLibrary = (): Library => ({ tracks: [], leadMs: 0 })
-
-/** Lenient read of a stored file: bad tracks are dropped with a warning instead of failing the load. */
-export function parseLibraryFile(raw: unknown): LoadResult {
-  if (!isObject(raw) || raw.schemaVersion !== 1 || !Array.isArray(raw.tracks)) {
-    return { ...emptyLibrary(), warnings: ['library file had an unexpected format and was reset'] }
-  }
-  const warnings: string[] = []
-  const seen = new Set<string>()
-  const tracks: Track[] = []
-  raw.tracks.slice(0, MAX_TRACKS).forEach((t, i) => {
-    const errors = validateTrack(t)
-    const id = isObject(t) && typeof t.id === 'string' ? t.id : null
-    if (errors.length > 0 || id === null || seen.has(id)) {
-      warnings.push(`dropped track #${i + 1}: ${errors[0] ?? 'duplicate id'}`)
-      return
-    }
-    seen.add(id)
-    tracks.push(t as unknown as Track)
-  })
-  const leadMs = isInt(raw.leadMs, 0, MAX_LEAD_MS) ? (raw.leadMs as number) : 0
-  return { ...sanitizeLibrary({ tracks, leadMs }), warnings }
-}

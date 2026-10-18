@@ -1,3 +1,6 @@
+/** Cue times are kept to the millisecond. */
+export const roundMs = (seconds: number): number => Math.round(seconds * 1000) / 1000
+
 /** 83.5 -> "1:23.500" */
 export function formatTime(seconds: number): string {
   const safe = Number.isFinite(seconds) && seconds > 0 ? seconds : 0

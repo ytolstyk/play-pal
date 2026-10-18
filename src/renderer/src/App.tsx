@@ -5,19 +5,29 @@ import { Player } from './components/Player'
 import { SettingsPanel } from './components/SettingsPanel'
 import { Sidebar } from './components/Sidebar'
 import { StatusBar } from './components/StatusBar'
-import { useLibrary } from './hooks/useLibrary'
+import { useLibrary, type LibraryApi } from './hooks/useLibrary'
 import { useLimiter } from './hooks/useLimiter'
 import { useMidiStatus } from './hooks/useMidiStatus'
 import { useTheme } from './hooks/useTheme'
 
 export function App(): React.JSX.Element {
-  const { library, warnings, saveError, update } = useLibrary()
+  const { library, warnings, saveError, update, replace } = useLibrary()
   const midi = useMidiStatus()
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [theme, setTheme] = useTheme()
   const [limiter, setLimiter] = useLimiter()
   const [settingsOpen, setSettingsOpen] = useState(false)
   const closeSettings = useCallback(() => setSettingsOpen(false), [])
+
+  // A restored library may not contain the open track.
+  const replaceLibrary = useCallback(
+    async (run: Parameters<LibraryApi['replace']>[0]) => {
+      const result = await replace(run)
+      if (result?.ok) setSelectedId(null)
+      return result
+    },
+    [replace]
+  )
 
   const track = library?.tracks.find((t) => t.id === selectedId) ?? null
 
@@ -84,7 +94,7 @@ export function App(): React.JSX.Element {
           void update((lib) => ({ ...lib, leadMs: ms }), true)
         }}
       />
-      {settingsOpen && <SettingsPanel theme={theme} onChange={setTheme} limiter={limiter} onLimiterChange={setLimiter} onClose={closeSettings} />}
+      {settingsOpen && <SettingsPanel theme={theme} onChange={setTheme} limiter={limiter} onLimiterChange={setLimiter} onReplaceLibrary={replaceLibrary} onClose={closeSettings} />}
     </div>
   )
 }

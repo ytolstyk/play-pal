@@ -4,6 +4,8 @@ import type {
   Track,
   Library,
   LoadResult,
+  BackupInfo,
+  RestoreResult,
   MidiAction,
   MidiStatus,
   PlaybackState,
@@ -16,6 +18,12 @@ import type {
 export interface Api {
   loadLibrary(): Promise<LoadResult>
   saveLibrary(library: Library): Promise<SaveResult>
+  /** Copies of the library file kept before it was overwritten or reset, newest first. */
+  listBackups(): Promise<BackupInfo[]>
+  /** Replaces the library with a backup (the current one is kept as a backup first); the result carries the library now in force. */
+  restoreBackup(id: string): Promise<RestoreResult>
+  /** Picks a library file of any age and imports it as `restoreBackup` does; null when cancelled. */
+  importLibraryFile(): Promise<RestoreResult | null>
   /** Native file dialog; null when cancelled. */
   pickAudioFile(): Promise<string | null>
   /**
@@ -44,6 +52,10 @@ export interface Api {
   ytReturn(): void
   /** Spectrum/waveform frames of the YouTube Music track, while analysis is on (see the `analyse` command). */
   onAudioFrame(cb: (f: AudioFrame) => void): () => void
+  /** A track's recorded waveform (see shared/waveform.ts); null if none was saved. */
+  loadWaveform(trackId: string): Promise<Uint8Array | null>
+  /** Stores a library track's waveform (beside the library file, not in it); resolves to whether it was kept. */
+  saveWaveform(trackId: string, bins: Uint8Array): Promise<boolean>
   testAction(action: MidiAction): Promise<void>
   getMidiStatus(): Promise<MidiStatus>
   onMidiStatus(cb: (s: MidiStatus) => void): () => void

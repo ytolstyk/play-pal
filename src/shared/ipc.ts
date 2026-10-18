@@ -1,6 +1,9 @@
 export const IPC = {
   libraryLoad: 'library:load',
   librarySave: 'library:save',
+  backupList: 'backup:list',
+  backupRestore: 'backup:restore',
+  backupImport: 'backup:import',
   pickAudio: 'track:pick-audio',
   arm: 'player:arm',
   lead: 'player:lead',
@@ -12,6 +15,8 @@ export const IPC = {
   ytCommand: 'yt:command',
   ytReturn: 'yt:return',
   audioFrame: 'player:audio-frame',
+  waveformLoad: 'waveform:load',
+  waveformSave: 'waveform:save',
   midiTest: 'midi:test',
   midiStatus: 'midi:status',
   midiReconnect: 'midi:reconnect'

@@ -51,13 +51,36 @@ export interface Library {
   leadMs: number
 }
 
+/** The `schemaVersion` this build writes. */
+export const SCHEMA_VERSION = 1
+
 export interface LibraryFile extends Library {
-  schemaVersion: 1
+  schemaVersion: typeof SCHEMA_VERSION
 }
 
 export interface LoadResult extends Library {
   warnings: string[]
 }
+
+/** Why a copy of the library file was kept. */
+export const BACKUP_KINDS = ['auto', 'startup', 'before-restore', 'incompatible', 'corrupt'] as const
+export type BackupKind = (typeof BACKUP_KINDS)[number]
+
+export interface BackupInfo {
+  /** Pass to `restoreBackup`. */
+  id: string
+  kind: BackupKind
+  /** When the copy was made (ms since epoch). */
+  savedAt: number
+  /** What can be recovered from it (0 for an unreadable file). */
+  tracks: number
+  cues: number
+}
+
+/** Things dropped or repaired while reading the backup are in `warnings`. */
+export type RestoreResult =
+  | { ok: true; errors: []; warnings: string[]; tracks: number; /** The library now in force, so the caller needs no reload. */ library: Library }
+  | { ok: false; errors: string[]; warnings: string[]; tracks: number }
 
 export interface SaveResult {
   ok: boolean
@@ -118,4 +141,5 @@ export const MAX_TITLE = 200
 export const MAX_LABEL = 100
 export const MAX_TRACKS = 500
 export const MAX_CUES = 200
+export const MAX_TIME_S = 24 * 60 * 60
 export const AUDIO_EXTENSIONS = ['mp3', 'wav', 'flac', 'm4a', 'aac', 'ogg', 'opus', 'aif', 'aiff']

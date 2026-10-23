@@ -61,6 +61,10 @@ let library: Library = emptyLibrary()
 /** The open track exactly as the renderer shows it, so firing never waits on or depends on a save. */
 let armed: Track | null = null
 let keepAwakeId: number | null = null
+/** Length of the armed YouTube Music video, as first reported by its page. */
+let ytDuration: number | null = null
+/** The page's URL can lag a change of video, so a sample with another length is not this track's. */
+const YT_DURATION_DRIFT_S = 1
 
 const port = new VirtualPort(() => pushMidiStatus())
 const sender = new ActionSender(port)
@@ -167,6 +171,13 @@ function onYtClock(e: IpcMainEvent, raw: unknown): void {
     runner.halt() // YouTube Music auto-advanced; this track's cues must not run against another song
     return
   }
+  if (clock.duration > 0) {
+    ytDuration ??= clock.duration
+    if (Math.abs(clock.duration - ytDuration) > YT_DURATION_DRIFT_S) {
+      runner.halt() // the page already swapped in another song while its URL still names this one
+      return
+    }
+  }
   const now = performance.now()
   const age = Math.min(MAX_SAMPLE_AGE_MS, Math.max(0, Date.now() - clock.sentAt))
   const state = { t: clock.t, duration: clock.duration, playing: clock.playing, rate: clock.rate }
@@ -201,6 +212,7 @@ function setKeepAwake(on: boolean): void {
 
 function disarm(): void {
   armed = null
+  ytDuration = null
   runner.select(null, [])
   yt.unload()
   setKeepAwake(false)
@@ -221,6 +233,7 @@ function armTrack(raw: unknown): void {
     return
   }
   runner.select(track.id, track.cues, track.start ?? null)
+  ytDuration = null
   if (track.source.kind === 'ytmusic') yt.load(track.source.videoId, track.start !== undefined)
   else yt.unload()
   setKeepAwake(true)

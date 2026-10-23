@@ -35,6 +35,22 @@ document.addEventListener('play', (e) => {
   if (holdsAutoplay() && e.target instanceof HTMLVideoElement) e.target.pause()
 }, true)
 
+const currentVideoId = (): string | null => new URLSearchParams(location.search).get('v')
+/** The video this page was opened for: YtPlayer.navigate always does a full load of a track's own watch URL, which re-runs this preload. */
+const trackVideoId = currentVideoId()
+const onTrustedPage = (): boolean => location.origin === TRUSTED_ORIGIN
+const isTrackVideo = (el: EventTarget | null): boolean =>
+  el instanceof HTMLVideoElement && onTrustedPage() && trackVideoId !== null && currentVideoId() === trackVideoId
+
+// The track ends here: the page's own "ended" handler would start the next song in the queue, replacing the app's
+// track with another video. Stopped in the capture phase, before it reaches the <video>; the page's UI then keeps
+// showing "playing", but the clock below reads `ended` from the element. If the page advances some other way,
+// main drops the other video's clock (videoId or length differs) instead of running this track's cues on it.
+// A page the user has browsed to another video is theirs and keeps its autoplay.
+document.addEventListener('ended', (e) => {
+  if (isTrackVideo(e.target)) e.stopImmediatePropagation()
+}, true)
+
 setInterval(() => {
   const v = video()
   if (!v || location.origin !== TRUSTED_ORIGIN) return
@@ -58,7 +74,7 @@ setInterval(() => {
     duration: v.duration,
     playing,
     rate: v.playbackRate,
-    videoId: new URLSearchParams(location.search).get('v'),
+    videoId: currentVideoId(),
     sentAt: now
   })
 }, POLL_MS)

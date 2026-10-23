@@ -42,6 +42,8 @@ export class YtPlayer {
   private limiting = false
   /** The page must not start playing by itself (the track's start preset goes out first); cleared by the first play command. */
   private holding = false
+  /** A reload of the track's page is under way after the page left it; repeat reclaim() calls are no-ops until the new document commits (or the load fails). */
+  private reclaiming = false
 
   constructor(private readonly window: () => BrowserWindow | null) {}
 
@@ -74,6 +76,19 @@ export class YtPlayer {
     this.navigate(this.view, this.videoId)
   }
 
+  /**
+   * The page moved on to another video by itself (queue auto-advance). Loads the track's own page again, paused at
+   * the start, so Restart and Play act on the right video. A no-op while that reload is already under way.
+   */
+  reclaim(): void {
+    if (!this.videoId || !this.view || this.reclaiming) return
+    this.reclaiming = true
+    this.holding = true
+    // The old document keeps playing the other song until the reload commits.
+    this.view.webContents.send(YT_PAGE.command, { cmd: 'hold', value: 1 })
+    this.navigate(this.view, this.videoId)
+  }
+
   private navigate(view: WebContentsView, videoId: string): void {
     // A navigation superseded by another one rejects; that's expected, not an error.
     void view.webContents.loadURL(watchUrl(videoId)).catch(() => undefined)
@@ -83,6 +98,7 @@ export class YtPlayer {
   unload(): void {
     this.videoId = null
     this.holding = false
+    this.reclaiming = false
     if (!this.view) return
     void this.view.webContents.loadURL('about:blank').catch(() => undefined)
     this.applyBounds()
@@ -164,6 +180,13 @@ export class YtPlayer {
       if (this.holding) wc.send(YT_PAGE.command, { cmd: 'hold', value: 1 })
       if (this.analysing) wc.send(YT_PAGE.command, { cmd: 'analyse', value: 1 })
       if (this.limiting) wc.send(YT_PAGE.command, { cmd: 'limiter', value: 1 })
+    })
+    // The old document, whose clocks still name the other song, is gone once a main-frame navigation commits or fails.
+    wc.on('did-navigate', () => {
+      this.reclaiming = false
+    })
+    wc.on('did-fail-load', (_e, _code, _desc, _url, isMainFrame) => {
+      if (isMainFrame) this.reclaiming = false
     })
     wc.on('will-navigate', guard)
     wc.on('will-redirect', guard)

@@ -32,6 +32,7 @@ import {
   type LoadResult,
   type MidiAction,
   type MidiStatus,
+  type PlaybackState,
   type RestoreResult,
   type SaveResult,
   type Track
@@ -65,6 +66,11 @@ let keepAwakeId: number | null = null
 let ytDuration: number | null = null
 /** The page's URL can lag a change of video, so a sample with another length is not this track's. */
 const YT_DURATION_DRIFT_S = 1
+/** A page that leaves the track this close to its end, right after reporting it, moved on by itself (queue auto-advance); otherwise the user browsed away. */
+const YT_AUTO_ADVANCE_WINDOW_S = 3
+const YT_AUTO_ADVANCE_MAX_GAP_MS = 1500
+/** Last position this track's own page reported while playing (a paused page keeps sending heartbeats), to tell an auto-advance from the user browsing elsewhere. */
+let lastYtSample: { t: number; duration: number; at: number } | null = null
 
 const port = new VirtualPort(() => pushMidiStatus())
 const sender = new ActionSender(port)
@@ -160,6 +166,28 @@ const originOf = (url: string | undefined): string | null => {
 }
 
 let lastPlaybackPush = { at: 0, playing: false, rate: 1 }
+function pushPlayback(state: PlaybackState): void {
+  lastPlaybackPush = { at: performance.now(), playing: state.playing, rate: state.rate }
+  pushToWindow(IPC.playback, state)
+}
+/**
+ * The page is showing another video. Cues stop and the window shows "stopped" (it would otherwise keep "playing" with a
+ * frozen clock). After an auto-advance the track's page is also loaded again so Play and Restart act on the right video;
+ * a page the user browsed away from is left alone for "Back to track".
+ */
+function onYtLeftTrack(): void {
+  runner.halt()
+  if (lastPlaybackPush.playing) pushPlayback({ t: 0, duration: ytDuration ?? 0, playing: false, rate: 1 })
+  const last = lastYtSample
+  const advanced =
+    last !== null &&
+    last.duration > 0 &&
+    last.t >= last.duration - YT_AUTO_ADVANCE_WINDOW_S &&
+    performance.now() - last.at <= YT_AUTO_ADVANCE_MAX_GAP_MS
+  if (!advanced) return
+  lastYtSample = null // the reloaded page repopulates it; a late sample from the old page must not reload again
+  yt.reclaim()
+}
 function onYtClock(e: IpcMainEvent, raw: unknown): void {
   const contents = yt.contents()
   if (!contents || e.sender !== contents || !armed || armed.source.kind !== 'ytmusic') return
@@ -168,24 +196,24 @@ function onYtClock(e: IpcMainEvent, raw: unknown): void {
   const clock = readYtPageClock(raw)
   if (!clock) return
   if (clock.videoId !== armed.source.videoId) {
-    runner.halt() // YouTube Music auto-advanced; this track's cues must not run against another song
+    onYtLeftTrack() // this track's cues must not run against another song
     return
   }
   if (clock.duration > 0) {
     ytDuration ??= clock.duration
     if (Math.abs(clock.duration - ytDuration) > YT_DURATION_DRIFT_S) {
-      runner.halt() // the page already swapped in another song while its URL still names this one
+      onYtLeftTrack() // the page already swapped in another song while its URL still names this one
       return
     }
   }
   const now = performance.now()
+  if (clock.playing) lastYtSample = { t: clock.t, duration: clock.duration, at: now }
   const age = Math.min(MAX_SAMPLE_AGE_MS, Math.max(0, Date.now() - clock.sentAt))
   const state = { t: clock.t, duration: clock.duration, playing: clock.playing, rate: clock.rate }
   runner.sample({ trackId: armed.id, ...state }, now - age)
   const changed = state.playing !== lastPlaybackPush.playing || state.rate !== lastPlaybackPush.rate
   if (changed || now - lastPlaybackPush.at >= PLAYBACK_PUSH_MS) {
-    lastPlaybackPush = { at: now, playing: state.playing, rate: state.rate }
-    pushToWindow(IPC.playback, state)
+    pushPlayback(state)
   }
 }
 
@@ -213,6 +241,7 @@ function setKeepAwake(on: boolean): void {
 function disarm(): void {
   armed = null
   ytDuration = null
+  lastYtSample = null
   runner.select(null, [])
   yt.unload()
   setKeepAwake(false)
@@ -234,6 +263,7 @@ function armTrack(raw: unknown): void {
   }
   runner.select(track.id, track.cues, track.start ?? null)
   ytDuration = null
+  lastYtSample = null
   if (track.source.kind === 'ytmusic') yt.load(track.source.videoId, track.start !== undefined)
   else yt.unload()
   setKeepAwake(true)

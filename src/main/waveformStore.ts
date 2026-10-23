@@ -1,16 +1,16 @@
 import { randomUUID } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
-import { MAX_WAVE_BINS } from '../shared/waveform'
+import { decodeWaveFile, encodeWaveFile, isWaveBins } from '../shared/waveform'
 import { isTrackId } from '../shared/validation'
 
 const EXT = '.wave'
 const TMP_EXT = '.tmp'
 
 /**
- * One file of level bytes per track (see shared/waveform.ts), kept beside library.json so the
- * library stays small and a cue edit never rewrites it. It is only a display cache: anything
- * unreadable reads as "not recorded".
+ * One file per track (see shared/waveform.ts), kept beside library.json so the library stays small and
+ * a cue edit never rewrites it. It is only a display cache: anything unreadable, or in an older format,
+ * reads as "not recorded".
  */
 export class WaveformStore {
   constructor(private readonly dir: string) {}
@@ -22,19 +22,19 @@ export class WaveformStore {
   async load(id: string): Promise<Uint8Array | null> {
     if (!isTrackId(id)) return null
     try {
-      const bytes = await fs.readFile(this.file(id))
-      return bytes.length > MAX_WAVE_BINS ? null : new Uint8Array(bytes)
+      const bins = decodeWaveFile(await fs.readFile(this.file(id)))
+      return bins && new Uint8Array(bins) // not a view of the read buffer, which IPC would copy whole
     } catch {
       return null
     }
   }
 
   async save(id: string, bins: Uint8Array): Promise<void> {
-    if (!isTrackId(id) || bins.length > MAX_WAVE_BINS) throw new Error('invalid waveform')
+    if (!isTrackId(id) || !isWaveBins(bins)) throw new Error(`invalid waveform for track ${id}: ${bins.length} bytes`)
     await fs.mkdir(this.dir, { recursive: true })
     const tmp = join(this.dir, `.${id}.${randomUUID()}${TMP_EXT}`)
     try {
-      await fs.writeFile(tmp, bins)
+      await fs.writeFile(tmp, encodeWaveFile(bins))
       await fs.rename(tmp, this.file(id))
     } catch (err) {
       await fs.unlink(tmp).catch(() => undefined)

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { binCount, peakLevel, WaveRecorder } from '../../../shared/waveform'
+import { bandLevels, binCount, WAVE_BANDS, WaveRecorder } from '../../../shared/waveform'
 import { ClockTracker } from '../clockTracker'
 import type { AudioFeed } from './useAudioFeed'
 import type { Clock } from './usePlayback'
@@ -120,7 +120,7 @@ interface RecorderInput {
   volume: number
 }
 
-/** While playing, samples the loudness from the feed into the waveform at the track's current position. */
+/** While playing, samples the loudness of each frequency band from the feed into the waveform at the track's current position. */
 export function useWaveRecorder({ wave, feed, clock, playing, rate, volume }: RecorderInput): void {
   const live = useRef({ rate, volume })
   useEffect(() => {
@@ -135,6 +135,7 @@ export function useWaveRecorder({ wave, feed, clock, playing, rate, volume }: Re
     let stretchStart: number | null = null
     let warmUntil = performance.now() + WARMUP_MS
     let framesWanted = true
+    const loudness = new Float64Array(WAVE_BANDS)
     recorder.startNewStretch()
 
     const startNewStretch = (now: number): void => {
@@ -163,10 +164,10 @@ export function useWaveRecorder({ wave, feed, clock, playing, rate, volume }: Re
       const frame = feed.read()
       if (!frame) return startNewStretch(now)
 
-      const loudness = Math.min(1, peakLevel(frame.wave) / level)
+      bandLevels(frame.freq, level, loudness)
       // The first sound of a stretch also stands for the warm-up before it, so no hole is left there.
-      const backfilled = stretchStart !== null && recorder.recordLevel(stretchStart, loudness)
-      const recordedNow = recorder.recordLevel(reading.t, loudness)
+      const backfilled = stretchStart !== null && recorder.recordLevels(stretchStart, loudness)
+      const recordedNow = recorder.recordLevels(reading.t, loudness)
       stretchStart = null
       if (backfilled || recordedNow) markChanged()
     }

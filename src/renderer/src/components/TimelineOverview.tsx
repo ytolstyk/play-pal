@@ -1,13 +1,13 @@
 import { useMemo, useRef } from 'react'
 import { clamp } from '../../../shared/guards'
+import type { DisplayBins } from '../../../shared/waveDisplay'
 import { capturePointer } from '../pointer'
 import { fullView, type View } from '../timelineView'
 import { WaveCanvas } from './WaveCanvas'
 
 interface Props {
-  bins: Uint8Array | null
+  bins: DisplayBins | null
   revision: number
-  ceiling: number
   duration: number
   view: View
   /** Playhead position, seconds. */
@@ -16,7 +16,7 @@ interface Props {
 }
 
 /** The whole track in miniature with the visible stretch outlined; drag the outline (or click) to scroll a zoomed timeline. */
-export function TimelineOverview({ bins, revision, ceiling, duration, view, t, onPan }: Props): React.JSX.Element {
+export function TimelineOverview({ bins, revision, duration, view, t, onPan }: Props): React.JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
   const drag = useRef<{ pointerId: number; grab: number } | null>(null)
   const whole = useMemo(() => fullView(duration), [duration])
@@ -59,7 +59,7 @@ export function TimelineOverview({ bins, revision, ceiling, duration, view, t, o
       onPointerCancel={end}
       onLostPointerCapture={end}
     >
-      <WaveCanvas bins={bins} revision={revision} view={whole} ceiling={ceiling} tone="idle" />
+      <WaveCanvas bins={bins} revision={revision} view={whole} tone="idle" />
       <div className="overview-window" style={{ left: pct(view.start), width: pct(view.span) }} />
       <div className="overview-playhead" style={{ left: pct(t) }} />
     </div>

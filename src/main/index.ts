@@ -37,7 +37,7 @@ import {
   type Track
 } from '../shared/types'
 import { emptyLibrary, isTrackId, sanitizeLibrary, validateAction, validateLibrary, validateTrack } from '../shared/validation'
-import { MAX_WAVE_BINS } from '../shared/waveform'
+import { isWaveBins } from '../shared/waveform'
 
 const WINDOW = { width: 1280, height: 860, minWidth: 980, minHeight: 640, background: '#121316' }
 const UNTRUSTED = 'untrusted sender'
@@ -334,7 +334,7 @@ function registerIpc(): void {
   ipcMain.on(IPC.ytReturn, (e) => trusted(e) && yt.returnToTrack())
   ipcMain.handle(IPC.waveformLoad, (e, id: unknown) => (trusted(e) && knowsTrack(id) ? waveforms.load(id) : null))
   ipcMain.handle(IPC.waveformSave, async (e, id: unknown, bins: unknown): Promise<boolean> => {
-    if (!trusted(e) || !knowsTrack(id) || !(bins instanceof Uint8Array) || bins.length > MAX_WAVE_BINS) return false
+    if (!trusted(e) || !knowsTrack(id) || !isWaveBins(bins)) return false
     try {
       await waveforms.save(id, bins)
       return true

@@ -1,4 +1,5 @@
 import { formatTime } from '../../../shared/time'
+import { WAVE_VIEWS, type WaveView } from '../../../shared/waveDisplay'
 import { canZoomIn, ZOOM_STEP, zoomFactor, type View } from '../timelineView'
 
 interface Props {
@@ -10,6 +11,8 @@ interface Props {
   coverage: number
   /** False until the waveform has loaded. */
   hasWaveform: boolean
+  waveView: WaveView
+  onWaveView(view: WaveView): void
   onZoom(factor: number): void
   onReset(): void
   onFollow(on: boolean): void
@@ -18,7 +21,7 @@ interface Props {
 const FULL_COVERAGE = 0.99
 
 /** Zoom, reset and follow controls under the timeline, the visible range, and how much of the waveform is recorded. */
-export function TimelineToolbar({ view, duration, zoomed, follow, coverage, hasWaveform, onZoom, onReset, onFollow }: Props): React.JSX.Element {
+export function TimelineToolbar({ view, duration, zoomed, follow, coverage, hasWaveform, waveView, onWaveView, onZoom, onReset, onFollow }: Props): React.JSX.Element {
   return (
     <div className="timeline-tools">
       <div className="tool-group" role="group" aria-label="Zoom">
@@ -41,6 +44,19 @@ export function TimelineToolbar({ view, duration, zoomed, follow, coverage, hasW
         >
           Follow
         </button>
+      </div>
+      <div className="tool-group" role="group" aria-label="Frequencies shown">
+        {WAVE_VIEWS.map((o) => (
+          <button
+            key={o.value}
+            className={waveView === o.value ? 'small toggle on' : 'small toggle'}
+            aria-pressed={waveView === o.value}
+            title={o.title}
+            onClick={() => onWaveView(o.value)}
+          >
+            {o.label}
+          </button>
+        ))}
       </div>
       {zoomed && (
         <span className="mono small muted">

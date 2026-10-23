@@ -1,4 +1,4 @@
-import { memo, type CSSProperties, useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
+import { memo, type CSSProperties, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { PendingSkip } from '../hooks/useSkip'
 import { useCueDrag, type CueDrag } from '../hooks/useCueDrag'
 import { useScrub } from '../hooks/useScrub'
@@ -11,7 +11,8 @@ import { START_CUE_ID, sortedByTime } from '../../../shared/cues'
 import { clamp } from '../../../shared/guards'
 import type { Cue } from '../../../shared/types'
 import { formatTime } from '../../../shared/time'
-import { displayCeiling } from '../../../shared/waveform'
+import { displayBins, isWaveView, type WaveView } from '../../../shared/waveDisplay'
+import { loadStored, saveStored } from '../storage'
 import { TimelineOverview } from './TimelineOverview'
 import { TimelineToolbar } from './TimelineToolbar'
 import { WaveCanvas } from './WaveCanvas'
@@ -36,6 +37,8 @@ interface Marker {
   at: number
   label: string
 }
+
+const WAVE_VIEW_KEY = 'waveView'
 
 const skipLabel = ({ delta, target }: PendingSkip): string => `${delta < 0 ? '−' : '+'}${Math.abs(delta)}s · ${formatTime(target)}`
 
@@ -72,7 +75,8 @@ export const Timeline = memo(function Timeline({
   const stageRef = useRef<HTMLDivElement>(null)
   const plotRef = useRef<HTMLDivElement>(null)
   const revision = useSyncExternalStore(wave.subscribe, wave.revision)
-  const bins = wave.recorder?.bins ?? null
+  const recorded = wave.recorder?.bins ?? null
+  const [waveView, setWaveView] = useState<WaveView>(() => loadStored(WAVE_VIEW_KEY, isWaveView, 'mix'))
 
   /** Track time under a pointer x, within what is on screen. */
   const timeAt = useCallback(
@@ -101,8 +105,12 @@ export const Timeline = memo(function Timeline({
     () => [...(startColor ? [{ id: START_CUE_ID, time: 0, color: startColor }] : []), ...sortedByTime(shown)],
     [shown, startColor]
   )
-  // `bins` is edited in place, so `revision` is what says it changed.
-  const ceiling = useMemo(() => (bins ? displayCeiling(bins) : 1), [bins, revision])
+  // `recorded` is edited in place, so `revision` is what says it changed.
+  const bins = useMemo(() => (recorded ? displayBins(recorded, waveView) : null), [recorded, revision, waveView])
+  const chooseWaveView = useCallback((v: WaveView) => {
+    setWaveView(v)
+    saveStored(WAVE_VIEW_KEY, v)
+  }, [])
 
   const fraction = (x: number): number => fractionOf(view.view, x)
   const pct = (x: number): string => `${fraction(x) * 100}%`
@@ -133,9 +141,9 @@ export const Timeline = memo(function Timeline({
               return <div key={c.id} className="segment" style={{ left: `${clamp(from, 0, 1) * 100}%`, right: `${(1 - clamp(to, 0, 1)) * 100}%`, background: c.color }} />
             })}
             <div className="played" style={{ transform: `scaleX(${played})`, ...(onScreen(playhead) ? {} : { borderRightWidth: 0 }) }} />
-            <WaveCanvas bins={bins} revision={revision} view={view.view} ceiling={ceiling} tone="idle" />
+            <WaveCanvas bins={bins} revision={revision} view={view.view} tone="idle" />
             <div className="wave-clip" style={{ clipPath: `inset(0 ${(1 - played) * 100}% 0 0)` }}>
-              <WaveCanvas bins={bins} revision={revision} view={view.view} ceiling={ceiling} tone="played" />
+              <WaveCanvas bins={bins} revision={revision} view={view.view} tone="played" />
             </div>
             {visibleCues.map((c) => (
               <div key={c.id} className={c.id === firedId ? 'marker fired' : 'marker'} style={cueStyle(c.color, pct(c.time))} />
@@ -162,7 +170,7 @@ export const Timeline = memo(function Timeline({
           ))}
         </div>
       </div>
-      {zoomed && <TimelineOverview bins={bins} revision={revision} ceiling={ceiling} duration={duration} view={view.view} t={playhead} onPan={view.scrollTo} />}
+      {zoomed && <TimelineOverview bins={bins} revision={revision} duration={duration} view={view.view} t={playhead} onPan={view.scrollTo} />}
       <TimelineToolbar
         view={view.view}
         duration={duration}
@@ -170,6 +178,8 @@ export const Timeline = memo(function Timeline({
         follow={follow}
         coverage={wave.recorder?.coverage ?? 0}
         hasWaveform={bins !== null}
+        waveView={waveView}
+        onWaveView={chooseWaveView}
         onZoom={zoomAtPlayhead}
         onReset={view.reset}
         onFollow={view.setFollow}

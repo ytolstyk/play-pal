@@ -4,6 +4,13 @@ import { isObject } from './guards'
 export const FFT_SIZE = 1024
 /** Analyser smoothing; the YouTube page preload repeats it as a literal (kept in sync by a test). */
 export const SMOOTHING = 0.6
+/**
+ * The dB range the analyser maps onto its 0-255 spectrum bytes; the YouTube page preload repeats it as literals.
+ * The Web Audio default tops out at -30 dB, which loud bass exceeds, so it reads as a solid ceiling. 0 dB is full scale,
+ * which a bin of real music stays well under.
+ */
+export const ANALYSER_MIN_DB = -100
+export const ANALYSER_MAX_DB = 0
 export const FREQ_BINS = FFT_SIZE / 2
 export const WAVE_SAMPLES = FFT_SIZE / 2
 /** How often the YouTube page sends a frame while the visualizer is showing. */

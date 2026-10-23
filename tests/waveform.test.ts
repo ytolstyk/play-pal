@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { FREQ_BINS } from '../src/shared/audio'
+import { ANALYSER_MAX_DB, ANALYSER_MIN_DB, FREQ_BINS } from '../src/shared/audio'
 import { BAND_VIEWS, displayBins, isWaveView, WAVE_VIEWS } from '../src/shared/waveDisplay'
 import {
   bandLevels,
@@ -44,7 +44,7 @@ describe('bandLevels', () => {
   it('divides the volume back out', () => {
     bandLevels(spectrum(1, 4, 150), 1, out)
     const full = out[0]
-    bandLevels(spectrum(1, 4, 150 - 18), 0.5, out) // 6 dB down is ~22 bytes, so a lower byte at half volume reads the same
+    bandLevels(spectrum(1, 4, 150 - 15), 0.5, out) // 6 dB down is ~15 bytes, so a lower byte at half volume reads the same
     expect(out[0]).toBeGreaterThan(full - 0.1)
     bandLevels(spectrum(1, 4, 150), 0.5, out)
     expect(out[0]).toBeGreaterThan(full)
@@ -201,9 +201,11 @@ describe('wave files', () => {
 })
 
 describe('wave files', () => {
-  // The recorded levels mean something only for these bands; change them and WAVE_FILE_FORMAT must go up.
-  it('has a format number for the bands it holds', () => {
-    expect(`${WAVE_FILE_FORMAT}:${WAVE_BAND_EDGES_HZ.join(',')}`).toBe('2:30,200,800,4000,16000')
+  // The recorded levels mean something only for these bands and this dB scale; change either and WAVE_FILE_FORMAT must go up.
+  it('has a format number for the bands and scale it holds', () => {
+    expect(`${WAVE_FILE_FORMAT}:${ANALYSER_MIN_DB}..${ANALYSER_MAX_DB}:${WAVE_BAND_EDGES_HZ.join(',')}`).toBe(
+      '3:-100..0:30,200,800,4000,16000'
+    )
   })
 })
 

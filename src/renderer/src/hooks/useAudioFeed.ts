@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useRef, type RefObject } from 'react'
-import { FFT_SIZE, FREQ_BINS, SMOOTHING, WAVE_SAMPLES, type AudioFrame } from '../../../shared/audio'
+import {
+  ANALYSER_MAX_DB,
+  ANALYSER_MIN_DB,
+  FFT_SIZE,
+  FREQ_BINS,
+  SMOOTHING,
+  WAVE_SAMPLES,
+  type AudioFrame
+} from '../../../shared/audio'
 
 /** A frame older than this is treated as silence (the page stopped sending, e.g. it navigated). */
 const STALE_MS = 250
@@ -24,6 +32,8 @@ function createFileFeed(audio: HTMLAudioElement): { feed: AudioFeed; close(): vo
     const analyser = ctx.createAnalyser()
     analyser.fftSize = FFT_SIZE
     analyser.smoothingTimeConstant = SMOOTHING
+    analyser.minDecibels = ANALYSER_MIN_DB
+    analyser.maxDecibels = ANALYSER_MAX_DB
     ctx.createMediaElementSource(audio).connect(analyser)
     analyser.connect(ctx.destination)
     const resume = (): void => void ctx.resume().catch((err) => console.warn('[visualizer] resume failed', err))

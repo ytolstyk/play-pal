@@ -8,9 +8,11 @@ const COMMAND = 'yt:page-command'
 const AUDIO = 'yt:page-audio'
 const POLL_MS = 40
 const IDLE_RESEND_MS = 1000
-// Must match FFT_SIZE and AUDIO_FRAME_MS in shared/audio.ts.
+// Must match FFT_SIZE, ANALYSER_*_DB and AUDIO_FRAME_MS in shared/audio.ts.
 const FFT_SIZE = 1024
 const SMOOTHING = 0.6
+const ANALYSER_MIN_DB = -100
+const ANALYSER_MAX_DB = 0
 const AUDIO_FRAME_MS = 33
 /** Drift smaller than this is rounding, not a page reset. */
 const VOLUME_EPSILON = 0.005
@@ -133,6 +135,8 @@ const buildGraph = (ctx: AudioContext, el: HTMLVideoElement): Graph => {
   const analyser = ctx.createAnalyser()
   analyser.fftSize = FFT_SIZE
   analyser.smoothingTimeConstant = SMOOTHING
+  analyser.minDecibels = ANALYSER_MIN_DB
+  analyser.maxDecibels = ANALYSER_MAX_DB
   analyser.connect(ctx.destination)
   const gain = ctx.createGain()
   gain.gain.value = wantedVolume ?? UNITY_GAIN

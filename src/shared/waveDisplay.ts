@@ -27,8 +27,13 @@ export type DisplayBins = Uint8Array & { readonly [displayBrand]: true }
 /** The quietest and loudest bins are left out when deciding what fills the height, so one spike or dropout doesn't flatten the rest. */
 const LOW_PERCENTILE = 0.05
 const HIGH_PERCENTILE = 0.98
-/** Level bytes (about 3.6 per dB) the stretch never magnifies past, so a band that hardly moves doesn't have its noise blown up. */
-const MIN_SPREAD = 25
+/** Level bytes (about 2.5 per dB, so 8 dB) the stretch never magnifies past, so a band that hardly moves doesn't have its noise blown up. */
+const MIN_SPREAD = 20
+/**
+ * After the stretch, levels are raised to this power, so what a band sustains sits low and only hits and strums
+ * reach the top; at 1 a band that is always near its loudest draws as a solid block.
+ */
+const EXPANSION = 1.6
 /** Percentiles and spread are read off about this many evenly spaced bins, so a long track costs no more to measure than a short one. */
 const MAX_STAT_SAMPLES = 8192
 /** With fewer recorded bins than this in the sample (a track just started), every bin is read instead. */
@@ -71,9 +76,9 @@ function sample(values: Uint8Array, stride: number): { counts: Uint32Array; tota
 
 /**
  * How to spread the span between a band's quiet and loud levels over the full height, so a band that
- * sits near its top all song still shows its dips.
+ * sits near its top all song still shows its dips, then raise the result to `expansion` (1 leaves it as stretched).
  */
-function curveOf(values: Uint8Array): Curve {
+function curveOf(values: Uint8Array, expansion: number): Curve {
   const lut = new Uint8Array(MAX_LEVEL_BYTE + 1)
   // An odd stride cannot lock onto a steady beat, which would sample the same phase of it throughout.
   let stride = Math.max(1, Math.ceil(values.length / MAX_STAT_SAMPLES)) | 1
@@ -85,9 +90,12 @@ function curveOf(values: Uint8Array): Curve {
   const low = percentileOf(counts, total, LOW_PERCENTILE)
   const high = percentileOf(counts, total, HIGH_PERCENTILE)
   const window = Math.max(MIN_SPREAD, high - low)
-  // A band too flat to stretch is centred rather than pinned to the floor.
+  // A band too flat to stretch is centred (before the expansion) rather than pinned to the floor.
   const floor = low - (window - (high - low)) / 2
-  for (let v = 1; v <= MAX_LEVEL_BYTE; v++) lut[v] = encodeLevel((v - floor) / window)
+  for (let v = 1; v <= MAX_LEVEL_BYTE; v++) {
+    const position = clamp((v - floor) / window, 0, 1)
+    lut[v] = encodeLevel(position ** expansion)
+  }
   return { lut, deviation }
 }
 
@@ -97,9 +105,12 @@ function applyCurve(values: Uint8Array, lut: Uint8Array): DisplayBins {
   return out as DisplayBins // branded here: the only place one is made
 }
 
-/** Every band at once, those that move more counting for more, then stretched again since averaging narrows the range. */
+/**
+ * Every band at once, those that move more counting for more, then stretched again since averaging narrows the range.
+ * Only that last pass expands, so the mix is bent once, like a single band.
+ */
 function blend(bands: readonly Uint8Array[]): DisplayBins {
-  const curves = bands.map(curveOf)
+  const curves = bands.map((band) => curveOf(band, 1))
   const total = curves.reduce((sum, c) => sum + c.deviation, 0)
   const shares = curves.map((c) => (total > 0 ? c.deviation / total : 1 / bands.length))
   const mixed = new Uint8Array(bands[0].length)
@@ -109,7 +120,7 @@ function blend(bands: readonly Uint8Array[]): DisplayBins {
     for (let b = 0; b < bands.length; b++) level += shares[b] * curves[b].lut[bands[b][i]]
     mixed[i] = clamp(Math.round(level), 1, MAX_LEVEL_BYTE)
   }
-  return applyCurve(mixed, curveOf(mixed).lut)
+  return applyCurve(mixed, curveOf(mixed, EXPANSION).lut)
 }
 
 /**
@@ -120,7 +131,7 @@ export function displayBins(bins: Uint8Array, view: WaveView): DisplayBins {
   const single = BAND_VIEWS.findIndex((v) => v === view)
   if (single >= 0) {
     const band = bandSlice(bins, single)
-    return applyCurve(band, curveOf(band).lut)
+    return applyCurve(band, curveOf(band, EXPANSION).lut)
   }
   return blend(Array.from({ length: WAVE_BANDS }, (_, b) => bandSlice(bins, b)))
 }

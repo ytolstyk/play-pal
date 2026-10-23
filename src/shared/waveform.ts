@@ -1,4 +1,4 @@
-import { FREQ_BINS } from './audio'
+import { ANALYSER_MAX_DB, ANALYSER_MIN_DB, FREQ_BINS } from './audio'
 import { clamp } from './guards'
 import { MAX_TIME_S } from './types'
 
@@ -19,14 +19,11 @@ export const MAX_WAVE_BYTES = MAX_WAVE_BINS * WAVE_BANDS
  * before there was a header (which began with a level byte) from passing as a current one.
  */
 const WAVE_FILE_MAGIC = [0x50, 0x50, 0x57] as const // "PPW"
-export const WAVE_FILE_FORMAT = 2
+export const WAVE_FILE_FORMAT = 3
 const WAVE_FILE_HEADER = [...WAVE_FILE_MAGIC, WAVE_FILE_FORMAT]
 
 /** A bin value of 0 means "not recorded yet"; recorded levels are 1-255. */
 export const MAX_LEVEL_BYTE = 255
-/** The analyser maps this dB range onto its 0-255 spectrum bytes (the Web Audio defaults, which no feed changes). */
-const ANALYSER_MIN_DB = -100
-const ANALYSER_MAX_DB = -30
 const ANALYSER_RANGE_DB = ANALYSER_MAX_DB - ANALYSER_MIN_DB
 /** The feeds' sample rate is not sent along with a frame; the usual one puts the band edges within a few percent. */
 const ASSUMED_SAMPLE_RATE = 44_100

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { AUDIO_FRAME_MS, FFT_SIZE, SMOOTHING } from '../src/shared/audio'
+import { ANALYSER_MAX_DB, ANALYSER_MIN_DB, AUDIO_FRAME_MS, FFT_SIZE, SMOOTHING } from '../src/shared/audio'
 import { YT_PAGE } from '../src/shared/ipc'
 
 describe('yt preload channel literals', () => {
@@ -16,5 +16,9 @@ describe('yt preload channel literals', () => {
     expect(src).toContain(`const FFT_SIZE = ${FFT_SIZE}`)
     expect(src).toContain(`const SMOOTHING = ${SMOOTHING}`)
     expect(src).toContain(`const AUDIO_FRAME_MS = ${AUDIO_FRAME_MS}`)
+    expect(src).toContain(`const ANALYSER_MIN_DB = ${ANALYSER_MIN_DB}`)
+    expect(src).toContain(`const ANALYSER_MAX_DB = ${ANALYSER_MAX_DB}`)
+    expect(src).toContain('analyser.minDecibels = ANALYSER_MIN_DB')
+    expect(src).toContain('analyser.maxDecibels = ANALYSER_MAX_DB')
   })
 })

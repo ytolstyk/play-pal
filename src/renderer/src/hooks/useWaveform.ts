@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { bandLevels, binCount, WAVE_BANDS, WaveRecorder } from '../../../shared/waveform'
+import { bandLevels, binCount, binTotalOf, SAVED_LENGTH_TOLERANCE_BINS, WAVE_BANDS, WAVE_BINS_PER_SECOND, WaveRecorder } from '../../../shared/waveform'
 import { ClockTracker } from '../clockTracker'
 import type { AudioFeed } from './useAudioFeed'
 import type { Clock } from './usePlayback'
@@ -17,6 +17,11 @@ const MIN_VOLUME = 0.05
 
 export interface Waveform {
   recorder: WaveRecorder | null
+  /**
+   * The track's length in seconds: the real duration once the player reports it, until then the saved recording's length
+   * (known as soon as the file is read, long before a YouTube Music page loads), 0 if neither is known.
+   */
+  duration: number
   /** Changes whenever recorded bins changed, so a canvas can redraw on it; read it with useSyncExternalStore. */
   subscribe(listener: () => void): () => void
   revision(): number
@@ -28,39 +33,51 @@ export interface Waveform {
 }
 
 /**
- * A track's waveform: loaded from disk once the duration is known, then filled in by
+ * A track's waveform: loaded from disk at once (a duration is not needed to read it), then filled in by
  * `useWaveRecorder` as the track plays, and saved back while playing, on pause and on unmount.
  * Redraws are announced through `subscribe`, like the clock, so the player itself doesn't re-render.
  */
 export function useWaveform(trackId: string, duration: number, playing: boolean): Waveform {
-  const [recorder, setRecorder] = useState<WaveRecorder | null>(null)
+  /** The saved recording (null: none) once read; undefined while the read is under way. */
+  const [saved, setSaved] = useState<Uint8Array | null | undefined>(undefined)
   const [wantsFrames, setWantsFrames] = useState(false)
   const revisionRef = useRef(0)
   const listeners = useRef(new Set<() => void>())
   const dirty = useRef(false)
   const redrawTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const saving = useRef<Promise<unknown>>(Promise.resolve())
-  const binTotal = binCount(duration)
 
   useEffect(() => {
-    setRecorder(null)
-    setWantsFrames(false)
-    if (binTotal === 0) return
+    setSaved(undefined)
     let cancelled = false
     void window.api
       .loadWaveform(trackId)
       .catch(() => null)
-      .then((saved) => {
-        if (cancelled) return
-        const loaded = new WaveRecorder(duration, saved)
-        setRecorder(loaded)
-        setWantsFrames(!loaded.complete)
+      .then((bins) => {
+        if (!cancelled) setSaved(bins)
       })
     return () => {
       cancelled = true
     }
-    // `binTotal` stands for `duration`: a changed length is a different track body.
-  }, [trackId, binTotal])
+  }, [trackId])
+
+  const savedBinTotal = saved ? binTotalOf(saved) : 0
+  const savedDuration = savedBinTotal / WAVE_BINS_PER_SECOND
+  // Until the real duration is known the saved recording's length stands in for it. Once it is, a length the
+  // recording still fits (the recorder's own tolerance) keeps the recorder as it is, so nothing recorded is thrown away
+  // by a rebuild; a different length is a different track body and starts over.
+  const realBinTotal = duration > 0 ? binCount(duration) : 0
+  const keepSaved = savedBinTotal > 0 && (realBinTotal === 0 || Math.abs(realBinTotal - savedBinTotal) <= SAVED_LENGTH_TOLERANCE_BINS)
+  const binTotal = keepSaved ? savedBinTotal : realBinTotal
+  const recorder = useMemo(
+    () => (saved !== undefined && binTotal > 0 ? new WaveRecorder(keepSaved ? savedDuration : duration, saved, binTotal) : null),
+    [saved, binTotal] // the rest only matters through `binTotal`
+  )
+  const shownDuration = duration > 0 ? duration : savedDuration
+
+  useEffect(() => {
+    setWantsFrames(recorder !== null && !recorder.complete)
+  }, [recorder])
 
   const subscribe = useCallback((listener: () => void) => {
     listeners.current.add(listener)
@@ -105,8 +122,8 @@ export function useWaveform(trackId: string, duration: number, playing: boolean)
   }, [recorder, trackId, playing])
 
   return useMemo(
-    () => ({ recorder, subscribe, revision, wantsFrames, markChanged, setWantsFrames }),
-    [recorder, subscribe, revision, wantsFrames, markChanged]
+    () => ({ recorder, duration: shownDuration, subscribe, revision, wantsFrames, markChanged, setWantsFrames }),
+    [recorder, shownDuration, subscribe, revision, wantsFrames, markChanged]
   )
 }
 

@@ -32,7 +32,7 @@ const MIN_VOLUME = 1e-3
 /** Consecutive samples this many bins apart are one stretch of playback; a wider gap is a seek. */
 const MAX_FILL_BINS = 4
 /** A saved recording this much shorter or longer than the track is still taken as its recording (duration rounding). */
-const SAVED_LENGTH_TOLERANCE_BINS = 2
+export const SAVED_LENGTH_TOLERANCE_BINS = 2
 /** A track counts as fully recorded with this many bins missing: the last sample of a song rarely lands in its final bin. */
 const SLACK_BINS = 3
 
@@ -113,9 +113,12 @@ export class WaveRecorder {
   private recordedCount = 0
   private lastBin = -1
 
-  /** `saved` is a previous recording; it is used only when it is about as long as the track. */
-  constructor(duration: number, saved?: Uint8Array | null) {
-    const n = binCount(duration)
+  /**
+   * `saved` is a previous recording; it is used only when it is about as long as the track.
+   * `bins` fixes the length when it is already known in bins: converting bins to seconds and back can come out one bin long.
+   */
+  constructor(duration: number, saved?: Uint8Array | null, bins = binCount(duration)) {
+    const n = bins
     this.binTotal = n
     this.bins = new Uint8Array(n * WAVE_BANDS)
     this.writtenThisSession = new Uint8Array(n)

@@ -281,4 +281,11 @@ describe('displayBins', () => {
     expect(displayBins(new Uint8Array(0), 'mix').length).toBe(0)
     expect(displayBins(new WaveRecorder(10).bins, 'high').every((v) => v === 0)).toBe(true)
   })
+
+  it('keeps the length of a saved recording when told its bin count', () => {
+    for (let n = 1; n <= 2000; n++) {
+      const saved = new Uint8Array(n * WAVE_BANDS)
+      expect(new WaveRecorder(n / BPS, saved, n).binTotal).toBe(n)
+    }
+  })
 })

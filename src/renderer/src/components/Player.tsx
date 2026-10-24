@@ -65,9 +65,10 @@ export function Player({ track, suspendVideo, onChange }: Props): React.JSX.Elem
   const seekTo = useCallback(
     (t: number) => {
       cancelSkip()
-      seek(t)
+      // The timeline can show cues from the saved waveform before the player (YouTube's page) is there to act on a seek.
+      if (state.duration > 0) seek(t)
     },
-    [cancelSkip, seek]
+    [cancelSkip, seek, state.duration]
   )
   const [firedId, setFiredId] = useState<string | null>(null)
   const [draftVolume, setDraftVolume] = useState<number | null>(null)
@@ -235,7 +236,7 @@ export function Player({ track, suspendVideo, onChange }: Props): React.JSX.Elem
     [onChange]
   )
 
-  const duration = state.duration
+  const duration = wave.duration // the saved waveform's length until the player reports the real one
 
   return (
     <section className="player">

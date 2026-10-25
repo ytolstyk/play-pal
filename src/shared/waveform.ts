@@ -100,6 +100,18 @@ export const encodeLevel = (level: number): number => 1 + Math.round(clamp(level
 /** A recorded byte (1-255) back to a 0-1 level. */
 export const levelOf = (bin: number): number => (bin - 1) / (MAX_LEVEL_BYTE - 1)
 
+/** A recording resampled to `bins` bins per band (nearest bin), so it can stand in for a recording of a different length. */
+function stretched(recording: Uint8Array, bins: number): Uint8Array {
+  const from = binTotalOf(recording)
+  const out = new Uint8Array(bins * WAVE_BANDS)
+  if (from === 0) return out
+  for (let band = 0; band < WAVE_BANDS; band++) {
+    const source = bandSlice(recording, band)
+    for (let i = 0; i < bins; i++) out[band * bins + i] = source[Math.min(from - 1, Math.floor((i * from) / bins))]
+  }
+  return out
+}
+
 /**
  * Fills a waveform as a track plays. Bins recorded in an earlier session are kept as they are;
  * within one session a bin keeps the loudest level seen, so replaying a stretch never lowers it.
@@ -107,6 +119,11 @@ export const levelOf = (bin: number): number => (bin - 1) / (MAX_LEVEL_BYTE - 1)
  */
 export class WaveRecorder {
   readonly bins: Uint8Array
+  /**
+   * What to draw: `bins`, with any stretch not recorded yet showing the `backdrop` (an earlier waveform stretched to this
+   * length) so a rebuilt recorder doesn't blank the screen. Only `bins` is saved, and only `bins` counts as recorded.
+   */
+  readonly shown: Uint8Array
   readonly binTotal: number
   private readonly writtenThisSession: Uint8Array
   private readonly encoded = new Uint8Array(WAVE_BANDS)
@@ -116,11 +133,13 @@ export class WaveRecorder {
   /**
    * `saved` is a previous recording; it is used only when it is about as long as the track.
    * `bins` fixes the length when it is already known in bins: converting bins to seconds and back can come out one bin long.
+   * `backdrop` is a waveform of any length to show until the playback overwrites it.
    */
-  constructor(duration: number, saved?: Uint8Array | null, bins = binCount(duration)) {
+  constructor(duration: number, saved?: Uint8Array | null, bins = binCount(duration), backdrop?: Uint8Array | null) {
     const n = bins
     this.binTotal = n
     this.bins = new Uint8Array(n * WAVE_BANDS)
+    this.shown = backdrop && isWaveBins(backdrop) ? stretched(backdrop, n) : new Uint8Array(n * WAVE_BANDS)
     this.writtenThisSession = new Uint8Array(n)
     if (saved && isWaveBins(saved) && Math.abs(binTotalOf(saved) - n) <= SAVED_LENGTH_TOLERANCE_BINS) this.load(saved)
   }
@@ -133,9 +152,16 @@ export class WaveRecorder {
     for (let bin = 0; bin < n; bin++) {
       let whole = true
       for (let band = 0; band < WAVE_BANDS; band++) whole &&= this.bins[this.indexOf(band, bin)] !== 0
-      if (whole) this.recordedCount++
-      else for (let band = 0; band < WAVE_BANDS; band++) this.bins[this.indexOf(band, bin)] = 0
+      if (whole) {
+        this.recordedCount++
+        this.show(bin)
+      } else for (let band = 0; band < WAVE_BANDS; band++) this.bins[this.indexOf(band, bin)] = 0
     }
+  }
+
+  /** Makes the drawn bin the recorded one, replacing the backdrop there. */
+  private show(bin: number): void {
+    for (let band = 0; band < WAVE_BANDS; band++) this.shown[this.indexOf(band, bin)] = this.bins[this.indexOf(band, bin)]
   }
 
   private indexOf(band: number, bin: number): number {
@@ -190,7 +216,7 @@ export class WaveRecorder {
     for (let band = 0; band < WAVE_BANDS; band++) {
       const i = this.indexOf(band, bin)
       if (this.encoded[band] > this.bins[i]) {
-        this.bins[i] = this.encoded[band]
+        this.bins[i] = this.shown[i] = this.encoded[band]
         changed = true
       }
     }

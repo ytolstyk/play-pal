@@ -46,9 +46,11 @@ export function useWaveform(trackId: string, duration: number, playing: boolean)
   const dirty = useRef(false)
   const redrawTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const saving = useRef<Promise<unknown>>(Promise.resolve())
+  const lastShown = useRef<Uint8Array | null>(null)
 
   useEffect(() => {
     setSaved(undefined)
+    lastShown.current = null // another track's waveform is no backdrop
     let cancelled = false
     void window.api
       .loadWaveform(trackId)
@@ -69,10 +71,18 @@ export function useWaveform(trackId: string, duration: number, playing: boolean)
   const realBinTotal = duration > 0 ? binCount(duration) : 0
   const keepSaved = savedBinTotal > 0 && (realBinTotal === 0 || Math.abs(realBinTotal - savedBinTotal) <= SAVED_LENGTH_TOLERANCE_BINS)
   const binTotal = keepSaved ? savedBinTotal : realBinTotal
+  // What was last drawn stays on screen under a rebuilt recorder (a length that no longer fits) until playback overwrites it.
+  // Written after each commit and read when the next recorder is built; cleared when the track changes.
   const recorder = useMemo(
-    () => (saved !== undefined && binTotal > 0 ? new WaveRecorder(keepSaved ? savedDuration : duration, saved, binTotal) : null),
+    () =>
+      saved !== undefined && binTotal > 0
+        ? new WaveRecorder(keepSaved ? savedDuration : duration, saved, binTotal, lastShown.current ?? saved)
+        : null,
     [saved, binTotal] // the rest only matters through `binTotal`
   )
+  useEffect(() => {
+    if (recorder) lastShown.current = recorder.shown
+  }, [recorder])
   const shownDuration = duration > 0 ? duration : savedDuration
 
   useEffect(() => {

@@ -75,7 +75,7 @@ export const Timeline = memo(function Timeline({
   const stageRef = useRef<HTMLDivElement>(null)
   const plotRef = useRef<HTMLDivElement>(null)
   const revision = useSyncExternalStore(wave.subscribe, wave.revision)
-  const recorded = wave.recorder?.bins ?? null
+  const shownBins = wave.recorder?.shown ?? null
   const [waveView, setWaveView] = useState<WaveView>(() => loadStored(WAVE_VIEW_KEY, isWaveView, 'mix'))
 
   /** Track time under a pointer x, within what is on screen. */
@@ -105,8 +105,8 @@ export const Timeline = memo(function Timeline({
     () => [...(startColor ? [{ id: START_CUE_ID, time: 0, color: startColor }] : []), ...sortedByTime(shown)],
     [shown, startColor]
   )
-  // `recorded` is edited in place, so `revision` is what says it changed.
-  const bins = useMemo(() => (recorded ? displayBins(recorded, waveView) : null), [recorded, revision, waveView])
+  // `shownBins` is edited in place, so `revision` is what says it changed.
+  const bins = useMemo(() => (shownBins ? displayBins(shownBins, waveView) : null), [shownBins, revision, waveView])
   const chooseWaveView = useCallback((v: WaveView) => {
     setWaveView(v)
     saveStored(WAVE_VIEW_KEY, v)

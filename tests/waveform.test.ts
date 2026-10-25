@@ -85,6 +85,36 @@ describe('WaveRecorder', () => {
     expect(levelOf(r.bins[2 * BPS])).toBeCloseTo(0.8, 1)
   })
 
+  it('shows an earlier waveform, stretched to the new length, until playback overwrites it', () => {
+    const old = new WaveRecorder(10)
+    for (let t = 0; t < 10; t += 1 / BPS) old.recordLevels(t, flat(0.5))
+    const rebuilt = new WaveRecorder(20, null, undefined, old.shown)
+    expect(rebuilt.coverage).toBe(0)
+    expect(rebuilt.bins.every((b) => b === 0)).toBe(true)
+    expect(levelOf(rebuilt.shown[0])).toBeCloseTo(0.5, 1)
+    expect(levelOf(rebuilt.shown[19 * BPS])).toBeCloseTo(0.5, 1)
+    rebuilt.recordLevels(5, flat(1))
+    expect(levelOf(rebuilt.shown[5 * BPS])).toBeCloseTo(1, 1)
+    expect(levelOf(rebuilt.shown[6 * BPS])).toBeCloseTo(0.5, 1)
+    expect(rebuilt.bins[6 * BPS]).toBe(0)
+  })
+
+  it('draws a saved recording over the backdrop and the backdrop where nothing was recorded', () => {
+    const saved = new WaveRecorder(10)
+    saved.recordLevels(1, flat(1))
+    const backdrop = new WaveRecorder(10)
+    for (let t = 0; t < 10; t += 1 / BPS) backdrop.recordLevels(t, flat(0.5))
+    const r = new WaveRecorder(10, saved.bins, undefined, backdrop.shown)
+    expect(levelOf(r.shown[BPS])).toBeCloseTo(1, 1)
+    expect(levelOf(r.shown[3 * BPS])).toBeCloseTo(0.5, 1)
+    expect(r.bins[3 * BPS]).toBe(0)
+  })
+
+  it('ignores a backdrop that is not a recording', () => {
+    const r = new WaveRecorder(10, null, undefined, new Uint8Array(WAVE_BANDS + 1))
+    expect(r.shown.every((b) => b === 0)).toBe(true)
+  })
+
   it('leaves bins from an earlier session alone and fills only the gaps', () => {
     const first = new WaveRecorder(10)
     first.recordLevels(1, flat(0.5))

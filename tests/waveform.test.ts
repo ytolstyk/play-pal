@@ -271,6 +271,30 @@ describe('displayBins', () => {
     expect(highs).toBeGreaterThan(0)
   })
 
+  it('shows the notes of a band that never goes quiet as bumps, with dips between them', () => {
+    // A bass line that drifts between two levels every 5 s, with a small swing within each second: every note a little
+    // above where it sits, a short gap a little below. Stretching the whole band alone leaves the drift to decide the height.
+    const r = new WaveRecorder(40)
+    for (let i = 0; i < 40 * BPS; i++) {
+      const section = Math.floor(i / (BPS * 5)) % 2 ? 0.07 : -0.07
+      const gap = i % BPS >= BPS * 0.75
+      r.recordLevels((i + 0.5) / BPS, [0.82 + section + (gap ? -0.04 : 0.03) + (((i * 7919) % 13) / 13) * 0.01, 0.5, 0.5, 0.5])
+    }
+    for (const view of ['bass', 'mix'] as const) {
+      const shown = displayBins(r.bins, view)
+      let notes = 0
+      let gaps = 0
+      let noteBins = 0
+      let gapBins = 0
+      for (let i = 10 * BPS; i < 30 * BPS; i++) {
+        if (i % BPS < BPS * 0.6) (notes += shown[i]), noteBins++
+        else if (i % BPS >= BPS * 0.8) (gaps += shown[i]), gapBins++
+      }
+      expect(notes / noteBins - gaps / gapBins).toBeGreaterThan(95)
+      expect(gaps / gapBins).toBeLessThan(50)
+    }
+  })
+
   it('leaves unrecorded bins at 0', () => {
     const r = new WaveRecorder(10)
     r.recordLevels(1, flat(0.5))

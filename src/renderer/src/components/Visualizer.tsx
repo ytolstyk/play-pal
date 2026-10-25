@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react'
 import { WAVE_SAMPLES } from '../../../shared/audio'
+import { DEFAULT_THEME } from '../theme'
 import type { AudioFeed } from '../hooks/useAudioFeed'
-import { createMemory, drawerFor, type Colors, type VizKind } from '../visualizers/draw'
+import { createDrawer, type Colors, type VizKind } from '../visualizers/draw'
 import { advance, createScene, isAtRest } from '../visualizers/scene'
 
 interface Props {
@@ -17,8 +18,8 @@ const COLOR_REFRESH_MS = 500
 const readColors = (): Colors => {
   const style = getComputedStyle(document.documentElement)
   return {
-    primary: style.getPropertyValue('--accent').trim() || '#ffb23e',
-    secondary: style.getPropertyValue('--accent-2').trim() || '#3ee0ff'
+    primary: style.getPropertyValue('--accent').trim() || DEFAULT_THEME.primary,
+    secondary: style.getPropertyValue('--accent-2').trim() || DEFAULT_THEME.secondary
   }
 }
 
@@ -30,7 +31,6 @@ export function Visualizer({ feed, kind, playing }: Props): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   // Kept across kind changes so switching doesn't make the motion restart from nothing.
   const scene = useRef(createScene(WAVE_SAMPLES))
-  const memory = useRef(createMemory())
   const playingRef = useRef(playing)
   const wake = useRef<() => void>(() => undefined)
 
@@ -38,15 +38,13 @@ export function Visualizer({ feed, kind, playing }: Props): React.JSX.Element {
     const canvas = canvasRef.current
     const g = canvas?.getContext('2d')
     if (!canvas || !g) return
-    const draw = drawerFor(kind)
+    const drawer = createDrawer(kind) // nothing thrown by another drawer carries over
     let size = { w: 0, h: 0 }
     let colors = readColors()
     let colorsAt = 0
     let raf = 0
     let last = 0
     let warned = false
-    memory.current.particles.length = 0
-    memory.current.rings.length = 0
 
     const resize = (): void => {
       const dpr = window.devicePixelRatio || 1
@@ -67,7 +65,7 @@ export function Visualizer({ feed, kind, playing }: Props): React.JSX.Element {
       g.clearRect(0, 0, size.w, size.h)
       g.save() // a drawer that throws midway must not leave additive blending or alpha behind
       try {
-        draw({ g, w: size.w, h: size.h, s: scene.current, c: colors, dt }, memory.current)
+        drawer.draw({ g, w: size.w, h: size.h, s: scene.current, c: colors, dt })
       } finally {
         g.restore()
       }
@@ -88,7 +86,7 @@ export function Visualizer({ feed, kind, playing }: Props): React.JSX.Element {
         warned = true
       }
       // Idle: let it fall to silence, then stop drawing until playback resumes.
-      raf = playingRef.current || !isAtRest(scene.current, memory.current.particles.length + memory.current.rings.length) ? requestAnimationFrame(loop) : 0
+      raf = playingRef.current || !(isAtRest(scene.current) && !drawer.isActive()) ? requestAnimationFrame(loop) : 0
     }
 
     const start = (): void => {

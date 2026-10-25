@@ -1,5 +1,5 @@
 import { clamp } from './guards'
-import { bandSlice, encodeLevel, MAX_LEVEL_BYTE, WAVE_BANDS } from './waveform'
+import { bandSlice, encodeLevel, MAX_LEVEL_BYTE, WAVE_BANDS, WAVE_BINS_PER_SECOND } from './waveform'
 
 /** The views of a single band, in the order the bands are recorded. */
 export const BAND_VIEWS = ['bass', 'lowmid', 'mid', 'high'] as const
@@ -34,6 +34,18 @@ const MIN_SPREAD = 20
  * reach the top; at 1 a band that is always near its loudest draws as a solid block.
  */
 const EXPANSION = 1.6
+/**
+ * Each bin is pushed away from the average of the second around it by this multiple of the difference, before the
+ * band is stretched. A band that sustains (a bass line, a pad) then shows each note and each gap as a bump and a dip
+ * on top of where it sits, instead of one solid block at its loudest.
+ */
+const SHARPEN = 1.6
+const SHARPEN_WINDOW_BINS = WAVE_BINS_PER_SECOND
+/**
+ * How much each band counts for in the mix, in the order the bands are recorded. Bass is in nearly every moment of a
+ * song and would otherwise set the look of the whole mix; it still shows through, but the bands that come and go lead.
+ */
+const MIX_WEIGHTS: readonly number[] = [0.55, 1, 1, 1]
 /** Percentiles and spread are read off about this many evenly spaced bins, so a long track costs no more to measure than a short one. */
 const MAX_STAT_SAMPLES = 8192
 /** With fewer recorded bins than this in the sample (a track just started), every bin is read instead. */
@@ -99,6 +111,39 @@ function curveOf(values: Uint8Array, expansion: number): Curve {
   return { lut, deviation }
 }
 
+/**
+ * A band with each recorded bin moved away from the average of the recorded bins within `SHARPEN_WINDOW_BINS`
+ * around it (unrecorded bins stay 0 and don't count towards the average).
+ */
+function sharpened(values: Uint8Array): Uint8Array {
+  const out = new Uint8Array(values.length)
+  const reach = Math.floor(SHARPEN_WINDOW_BINS / 2)
+  let windowSum = 0
+  let windowCount = 0
+  let nextToAdd = 0
+  let nextToDrop = 0
+  const add = (bin: number): void => {
+    if (values[bin] === 0) return
+    windowSum += values[bin]
+    windowCount++
+  }
+  const drop = (bin: number): void => {
+    if (values[bin] === 0) return
+    windowSum -= values[bin]
+    windowCount--
+  }
+  for (let i = 0; i < values.length; i++) {
+    while (nextToAdd < Math.min(values.length, i + reach + 1)) add(nextToAdd++)
+    while (nextToDrop < Math.max(0, i - reach)) drop(nextToDrop++)
+    const level = values[i]
+    if (level === 0) continue
+    // A recorded bin is inside its own window, so the count is at least 1.
+    const localAverage = windowSum / windowCount
+    out[i] = clamp(Math.round(level + SHARPEN * (level - localAverage)), 1, MAX_LEVEL_BYTE)
+  }
+  return out
+}
+
 function applyCurve(values: Uint8Array, lut: Uint8Array): DisplayBins {
   const out = new Uint8Array(values.length)
   for (let i = 0; i < values.length; i++) out[i] = lut[values[i]]
@@ -111,8 +156,9 @@ function applyCurve(values: Uint8Array, lut: Uint8Array): DisplayBins {
  */
 function blend(bands: readonly Uint8Array[]): DisplayBins {
   const curves = bands.map((band) => curveOf(band, 1))
-  const total = curves.reduce((sum, c) => sum + c.deviation, 0)
-  const shares = curves.map((c) => (total > 0 ? c.deviation / total : 1 / bands.length))
+  const weights = curves.map((c, b) => c.deviation * (MIX_WEIGHTS[b] ?? 1))
+  const total = weights.reduce((sum, wt) => sum + wt, 0)
+  const shares = weights.map((wt) => (total > 0 ? wt / total : 1 / bands.length))
   const mixed = new Uint8Array(bands[0].length)
   for (let i = 0; i < mixed.length; i++) {
     if (bands[0][i] === 0) continue // recorded in every band at once (see WaveRecorder)
@@ -130,8 +176,8 @@ function blend(bands: readonly Uint8Array[]): DisplayBins {
 export function displayBins(bins: Uint8Array, view: WaveView): DisplayBins {
   const single = BAND_VIEWS.findIndex((v) => v === view)
   if (single >= 0) {
-    const band = bandSlice(bins, single)
+    const band = sharpened(bandSlice(bins, single))
     return applyCurve(band, curveOf(band, EXPANSION).lut)
   }
-  return blend(Array.from({ length: WAVE_BANDS }, (_, b) => bandSlice(bins, b)))
+  return blend(Array.from({ length: WAVE_BANDS }, (_, b) => sharpened(bandSlice(bins, b))))
 }

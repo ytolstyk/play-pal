@@ -27,7 +27,7 @@ const HEX = /^#[0-9a-f]{6}$/i
 
 export const isHexColor = (v: unknown): v is string => typeof v === 'string' && HEX.test(v)
 
-const channels = (hex: string): [number, number, number] => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)) as [number, number, number]
+export const channels = (hex: string): [number, number, number] => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)) as [number, number, number]
 
 /** Dark ink on light colours, light ink on dark ones (WCAG relative luminance). */
 export function inkFor(hex: string): string {

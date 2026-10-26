@@ -71,6 +71,8 @@ button.small, .small button { padding: 3px 8px; }
 
 /* player */
 main { position: relative; overflow-y: auto; min-width: 0; }
+.offer { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 10px; padding: 9px 20px; background: var(--panel-2); border-bottom: 1px solid var(--accent-soft); }
+.offer span { flex: 1; min-width: 0; }
 .player { padding: 16px 20px; display: grid; gap: 14px; }
 .title-input { font-size: 18px; font-weight: 600; background: transparent; border-color: transparent; padding: 4px 6px; margin-left: -6px; }
 .title-input:hover, .title-input:focus { border-color: var(--line); }

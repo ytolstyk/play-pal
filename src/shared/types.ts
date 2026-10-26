@@ -102,6 +102,12 @@ export interface PlaybackState {
   rate: number
 }
 
+/** The YouTube Music page moved on to another song by itself while a track was playing. */
+export interface YtAdvanced {
+  videoId: string
+  title: string
+}
+
 export interface ClockSample extends PlaybackState {
   trackId: string
 }

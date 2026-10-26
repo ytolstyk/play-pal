@@ -14,6 +14,7 @@ export const IPC = {
   ytBounds: 'yt:bounds',
   ytCommand: 'yt:command',
   ytReturn: 'yt:return',
+  ytAdvanced: 'player:yt-advanced',
   audioFrame: 'player:audio-frame',
   waveformLoad: 'waveform:load',
   waveformSave: 'waveform:save',

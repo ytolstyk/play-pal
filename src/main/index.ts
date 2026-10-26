@@ -23,7 +23,9 @@ import { YtPlayer } from './ytPlayer'
 import { IPC, YT_PAGE } from '../shared/ipc'
 import { clampInt } from '../shared/guards'
 import { AUDIO_FRAME_MS, readAudioFrame } from '../shared/audio'
-import { readClock, readRect, readYtCommand, readYtPageClock } from '../shared/payloads'
+import { readClock, readRect, readYtCommand, readYtPageClock, type YtPageClock } from '../shared/payloads'
+import { isVideoId, ytFallbackTitle } from '../shared/url'
+import { isAutoAdvance } from '../shared/ytAdvance'
 import {
   AUDIO_EXTENSIONS,
   MAX_LEAD_MS,
@@ -35,7 +37,8 @@ import {
   type PlaybackState,
   type RestoreResult,
   type SaveResult,
-  type Track
+  type Track,
+  type YtAdvanced
 } from '../shared/types'
 import { emptyLibrary, isTrackId, sanitizeLibrary, validateAction, validateLibrary, validateTrack } from '../shared/validation'
 import { isWaveBins } from '../shared/waveform'
@@ -66,11 +69,16 @@ let keepAwakeId: number | null = null
 let ytDuration: number | null = null
 /** The page's URL can lag a change of video, so a sample with another length is not this track's. */
 const YT_DURATION_DRIFT_S = 1
-/** A page that leaves the track this close to its end, right after reporting it, moved on by itself (queue auto-advance); otherwise the user browsed away. */
-const YT_AUTO_ADVANCE_WINDOW_S = 3
-const YT_AUTO_ADVANCE_MAX_GAP_MS = 1500
-/** Last position this track's own page reported while playing (a paused page keeps sending heartbeats), to tell an auto-advance from the user browsing elsewhere. */
-let lastYtSample: { t: number; duration: number; at: number } | null = null
+/** How long after an auto-advance the page's now-playing title is awaited (it can lag the URL) before the song is offered. */
+const YT_OFFER_DELAY_MS = 1200
+/** When this track's own page last reported playing (a paused page keeps sending heartbeats), to tell an auto-advance from the user browsing elsewhere. Cleared once a leave is judged. */
+let lastYtPlayingAt: number | null = null
+/** When a click or key last reached the page (any video, any document: a full page load resets the page's own memory of it). */
+let lastYtUserActiveAt: number | null = null
+/** An auto-advance was judged while the page's URL still named the track (its length changed first); the song is offered once the URL catches up. */
+let advancePending = false
+/** The song the page moved on to, until it is offered to the window; its title is the latest the page has reported. */
+let advancedSong: YtAdvanced | null = null
 
 const port = new VirtualPort(() => pushMidiStatus())
 const sender = new ActionSender(port)
@@ -172,21 +180,46 @@ function pushPlayback(state: PlaybackState): void {
 }
 /**
  * The page is showing another video. Cues stop and the window shows "stopped" (it would otherwise keep "playing" with a
- * frozen clock). After an auto-advance the track's page is also loaded again so Play and Restart act on the right video;
- * a page the user browsed away from is left alone for "Back to track".
+ * frozen clock). After an auto-advance the track's page is also loaded again so Play and Restart act on the right video,
+ * and the window is told which song the page moved on to (it may offer to keep it); a page the user browsed away from is
+ * left alone for "Back to track".
  */
-function onYtLeftTrack(): void {
+function onYtLeftTrack(clock: YtPageClock): void {
   runner.halt()
   if (lastPlaybackPush.playing) pushPlayback({ t: 0, duration: ytDuration ?? 0, playing: false, rate: 1 })
-  const last = lastYtSample
-  const advanced =
-    last !== null &&
-    last.duration > 0 &&
-    last.t >= last.duration - YT_AUTO_ADVANCE_WINDOW_S &&
-    performance.now() - last.at <= YT_AUTO_ADVANCE_MAX_GAP_MS
+  if (advancedSong?.videoId === clock.videoId && clock.title) advancedSong.title = clock.title // the title can lag the URL
+  // The old page keeps reporting until the reload commits; only the first sample of a leave is judged, because the
+  // user's click activation expires while the song they chose is still playing.
+  const playedAt = lastYtPlayingAt
+  lastYtPlayingAt = null
+  if (playedAt === null) {
+    if (advancePending && offerable(clock)) offerAdvancedSong(clock)
+    return
+  }
+  const advanced = isAutoAdvance(lastYtUserActiveAt, playedAt, performance.now())
+  const page = isVideoId(clock.videoId) ? clock.videoId : '(invalid id)'
+  console.warn(
+    `[ytmusic] page left the track (${advanced ? 'auto-advance' : 'browsed away'}): page video ${page} at ${clock.t.toFixed(1)}s of ${clock.duration.toFixed(1)}s, track length ${ytDuration?.toFixed(1) ?? 'unknown'}s`
+  )
   if (!advanced) return
-  lastYtSample = null // the reloaded page repopulates it; a late sample from the old page must not reload again
   yt.reclaim()
+  if (offerable(clock)) offerAdvancedSong(clock)
+  else advancePending = true
+}
+/** The page is on a real video other than the armed track's. */
+const offerable = (clock: YtPageClock): boolean =>
+  isVideoId(clock.videoId) && armed?.source.kind === 'ytmusic' && clock.videoId !== armed.source.videoId
+/** Offers the song the page moved on to once its title has had time to catch up with the URL. */
+function offerAdvancedSong(clock: YtPageClock): void {
+  advancePending = false
+  const trackId = armed?.id
+  const song: YtAdvanced = { videoId: clock.videoId, title: clock.title ?? ytFallbackTitle(clock.videoId) }
+  advancedSong = song
+  setTimeout(() => {
+    if (advancedSong !== song) return // cleared, or replaced by a newer offer with its own timer
+    advancedSong = null
+    if (armed?.id === trackId) pushToWindow(IPC.ytAdvanced, song)
+  }, YT_OFFER_DELAY_MS)
 }
 function onYtClock(e: IpcMainEvent, raw: unknown): void {
   const contents = yt.contents()
@@ -195,19 +228,20 @@ function onYtClock(e: IpcMainEvent, raw: unknown): void {
   if (originOf(e.senderFrame?.url) !== YT_ORIGIN) return
   const clock = readYtPageClock(raw)
   if (!clock) return
+  if (clock.userActive) lastYtUserActiveAt = performance.now()
   if (clock.videoId !== armed.source.videoId) {
-    onYtLeftTrack() // this track's cues must not run against another song
+    onYtLeftTrack(clock) // this track's cues must not run against another song
     return
   }
   if (clock.duration > 0) {
     ytDuration ??= clock.duration
     if (Math.abs(clock.duration - ytDuration) > YT_DURATION_DRIFT_S) {
-      onYtLeftTrack() // the page already swapped in another song while its URL still names this one
+      onYtLeftTrack(clock) // the page already swapped in another song while its URL still names this one
       return
     }
   }
   const now = performance.now()
-  if (clock.playing) lastYtSample = { t: clock.t, duration: clock.duration, at: now }
+  if (clock.playing) lastYtPlayingAt = now
   const age = Math.min(MAX_SAMPLE_AGE_MS, Math.max(0, Date.now() - clock.sentAt))
   const state = { t: clock.t, duration: clock.duration, playing: clock.playing, rate: clock.rate }
   runner.sample({ trackId: armed.id, ...state }, now - age)
@@ -241,7 +275,10 @@ function setKeepAwake(on: boolean): void {
 function disarm(): void {
   armed = null
   ytDuration = null
-  lastYtSample = null
+  lastYtPlayingAt = null
+  lastYtUserActiveAt = null
+  advancePending = false
+  advancedSong = null
   runner.select(null, [])
   yt.unload()
   setKeepAwake(false)
@@ -263,7 +300,10 @@ function armTrack(raw: unknown): void {
   }
   runner.select(track.id, track.cues, track.start ?? null)
   ytDuration = null
-  lastYtSample = null
+  lastYtPlayingAt = null
+  lastYtUserActiveAt = null
+  advancePending = false
+  advancedSong = null
   if (track.source.kind === 'ytmusic') yt.load(track.source.videoId, track.start !== undefined)
   else yt.unload()
   setKeepAwake(true)

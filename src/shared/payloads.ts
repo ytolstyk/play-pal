@@ -1,5 +1,5 @@
 import { isFiniteNumber, isObject, isVolume } from './guards'
-import type { ClockSample, PlaybackState, Rect, YtCommand } from './types'
+import { MAX_TITLE, type ClockSample, type PlaybackState, type Rect, type YtCommand } from './types'
 
 const MAX_RECT = 20000
 
@@ -22,13 +22,21 @@ export interface YtPageClock extends PlaybackState {
   videoId: string
   /** Wall-clock ms when the page read the position. */
   sentAt: number
+  /** The user clicked or typed in the page moments ago, so a change of video was probably theirs. */
+  userActive: boolean
+  /** The page's now-playing title; only sent while it plays a video other than the one it was opened for. */
+  title?: string
 }
 
 /** Clock from the YouTube Music page (untrusted content; shape-checked only). */
 export function readYtPageClock(raw: unknown): YtPageClock | null {
   const state = readPlayback(raw)
   if (!state || !isObject(raw) || typeof raw.videoId !== 'string' || !isFiniteNumber(raw.sentAt)) return null
-  return { ...state, videoId: raw.videoId, sentAt: raw.sentAt }
+  const clock: YtPageClock = { ...state, videoId: raw.videoId, sentAt: raw.sentAt, userActive: raw.userActive === true }
+  // The title is uploader-controlled text shown in the app's own UI: no control or direction-changing characters.
+  const title = typeof raw.title === 'string' ? raw.title.replace(/[\p{Cc}\p{Cf}]/gu, '').trim().slice(0, MAX_TITLE) : ''
+  if (title) clock.title = title
+  return clock
 }
 
 export function readYtCommand(raw: unknown): YtCommand | null {

@@ -20,6 +20,14 @@ describe('payload readers', () => {
     expect(readYtPageClock({ ...base, videoId: null, sentAt: 1 })).toBeNull()
     expect(readYtPageClock({ ...base, videoId: 'x' })).toBeNull()
   })
+  it('readYtPageClock reads user activity and a trimmed title, tolerating their absence', () => {
+    const clock = { ...base, videoId: 'x', sentAt: 1 }
+    expect(readYtPageClock(clock)).toEqual({ ...clock, userActive: false })
+    expect(readYtPageClock({ ...clock, userActive: true, title: '  Song  ' })).toMatchObject({ userActive: true, title: 'Song' })
+    expect(readYtPageClock({ ...clock, userActive: 'yes', title: '   ' })).toEqual({ ...clock, userActive: false })
+    expect(readYtPageClock({ ...clock, title: 'x'.repeat(500) })?.title).toHaveLength(200)
+    expect(readYtPageClock({ ...clock, title: 'Re\u202Eal\nSong' })?.title).toBe('RealSong')
+  })
   it('readYtCommand', () => {
     expect(readYtCommand({ cmd: 'play' })).toEqual({ cmd: 'play' })
     expect(readYtCommand({ cmd: 'seek', value: 12 })).toEqual({ cmd: 'seek', value: 12 })

@@ -23,7 +23,14 @@ const TRUSTED_ORIGIN = 'https://music.youtube.com'
 
 const video = (): HTMLVideoElement | null => document.querySelector('video')
 
-let lastSent = { t: -1, playing: false, rate: 1, at: 0 }
+let lastSent: { t: number; playing: boolean; rate: number; videoId: string | null; title: string | undefined; at: number } = {
+  t: -1,
+  playing: false,
+  rate: 1,
+  videoId: null,
+  title: undefined,
+  at: 0
+}
 /** Last volume the app asked for. Applied on the gain node; only without Web Audio is it forced onto the <video>, which the page resets on its own. */
 let wantedVolume: number | null = null
 /** Autoplay is paused until the app's first play command; a page the user has clicked in is theirs to play. */
@@ -51,6 +58,18 @@ document.addEventListener('ended', (e) => {
   if (isTrackVideo(e.target)) e.stopImmediatePropagation()
 }, true)
 
+/** What the page said it was playing while it was on the track's video; the page's metadata lags its URL, so this is a stale title once it has moved on. */
+let trackTitle: string | undefined
+/** The now-playing title once the page is on another song (the app offers to keep that song); undefined while it is still the old one. */
+const otherSongTitle = (): string | undefined => {
+  const title = navigator.mediaSession.metadata?.title
+  if (currentVideoId() === trackVideoId) {
+    trackTitle = title
+    return undefined
+  }
+  return title === trackTitle ? undefined : title
+}
+
 setInterval(() => {
   const v = video()
   if (!v || location.origin !== TRUSTED_ORIGIN) return
@@ -65,17 +84,27 @@ setInterval(() => {
   }
   const now = Date.now()
   const playing = !v.paused && !v.ended
-  const unchanged = v.currentTime === lastSent.t && playing === lastSent.playing && v.playbackRate === lastSent.rate
+  const videoId = currentVideoId()
+  const title = otherSongTitle()
+  // A new video or a title catching up with it is news even when a held (paused) page's position is not moving.
+  const unchanged =
+    v.currentTime === lastSent.t &&
+    playing === lastSent.playing &&
+    v.playbackRate === lastSent.rate &&
+    videoId === lastSent.videoId &&
+    title === lastSent.title
   // While paused and untouched there's nothing new to say; a slow heartbeat keeps main's view fresh.
   if (unchanged && now - lastSent.at < IDLE_RESEND_MS) return
-  lastSent = { t: v.currentTime, playing, rate: v.playbackRate, at: now }
+  lastSent = { t: v.currentTime, playing, rate: v.playbackRate, videoId, title, at: now }
   ipcRenderer.send(CLOCK, {
     t: v.currentTime,
     duration: v.duration,
     playing,
     rate: v.playbackRate,
-    videoId: currentVideoId(),
-    sentAt: now
+    videoId,
+    sentAt: now,
+    userActive: navigator.userActivation.isActive,
+    title
   })
 }, POLL_MS)
 

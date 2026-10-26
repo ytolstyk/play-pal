@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { AudioFrame } from '../shared/audio'
 import type { Api } from '../shared/api'
 import { IPC } from '../shared/ipc'
-import type { MidiStatus, PlaybackState } from '../shared/types'
+import type { MidiStatus, PlaybackState, YtAdvanced } from '../shared/types'
 
 /** Subscribes to a main -> renderer push and returns the unsubscribe function. */
 const subscribe =
@@ -29,6 +29,7 @@ const api: Api = {
   setYtBounds: (rect) => ipcRenderer.send(IPC.ytBounds, rect),
   ytCommand: (command) => ipcRenderer.send(IPC.ytCommand, command),
   ytReturn: () => ipcRenderer.send(IPC.ytReturn),
+  onYtAdvanced: subscribe<YtAdvanced>(IPC.ytAdvanced),
   onAudioFrame: subscribe<AudioFrame>(IPC.audioFrame),
   loadWaveform: (trackId) => ipcRenderer.invoke(IPC.waveformLoad, trackId),
   saveWaveform: (trackId, bins) => ipcRenderer.invoke(IPC.waveformSave, trackId, bins),

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { Track } from '../../../shared/types'
 import { parseVideoId } from '../../../shared/url'
+import { newYtTrack } from '../newTrack'
 
 interface Props {
   tracks: Track[]
@@ -30,12 +31,7 @@ export function Sidebar({ tracks, selectedId, onSelect, onAdd, onDelete }: Props
     }
     setLinkError(null)
     setLink('')
-    onAdd({
-      id: crypto.randomUUID(),
-      title: `YouTube Music ${videoId}`,
-      source: { kind: 'ytmusic', videoId },
-      cues: []
-    })
+    onAdd(newYtTrack(videoId))
   }
 
   return (

@@ -11,6 +11,7 @@ import type {
   PlaybackState,
   Rect,
   SaveResult,
+  YtAdvanced,
   YtCommand
 } from './types'
 
@@ -50,6 +51,8 @@ export interface Api {
   ytCommand(command: YtCommand): void
   /** Navigates the YouTube Music view back to the armed track's page (the user may have wandered off). */
   ytReturn(): void
+  /** The page started another song by itself (queue auto-advance); main has already taken the track back. */
+  onYtAdvanced(cb: (song: YtAdvanced) => void): () => void
   /** Spectrum/waveform frames of the YouTube Music track, while analysis is on (see the `analyse` command). */
   onAudioFrame(cb: (f: AudioFrame) => void): () => void
   /** A track's recorded waveform (see shared/waveform.ts); null if none was saved. */

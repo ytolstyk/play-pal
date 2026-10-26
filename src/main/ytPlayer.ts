@@ -17,6 +17,8 @@ const REFUSED_HOSTS = new Set([
   'groups.google.com',
   'forms.google.com'
 ])
+/** A reclaim that has not committed by now is given up, so Play is not dropped for good by a stalled load. */
+const RECLAIM_TIMEOUT_MS = 10_000
 const HIDDEN: Rect = { x: 0, y: 0, width: 0, height: 0 }
 
 const isAllowedUrl = (raw: string): boolean => {
@@ -44,6 +46,7 @@ export class YtPlayer {
   private holding = false
   /** A reload of the track's page is under way after the page left it; repeat reclaim() calls are no-ops until the new document commits (or the load fails). */
   private reclaiming = false
+  private reclaimTimer: ReturnType<typeof setTimeout> | undefined
 
   constructor(private readonly window: () => BrowserWindow | null) {}
 
@@ -62,17 +65,21 @@ export class YtPlayer {
     this.navigate(view, videoId)
   }
 
+  private isTrackPage(url: string): boolean {
+    try {
+      const u = new URL(url)
+      return u.pathname === '/watch' && u.searchParams.get('v') === this.videoId
+    } catch {
+      return false
+    }
+  }
+
   /** Back to the track's own page after the user navigated elsewhere inside the view. */
   returnToTrack(): void {
     if (!this.videoId || !this.view) return
     this.holding = false // the user is steering the view now; don't pause what they play
     // Already on the track's page: reloading would interrupt playback for nothing.
-    try {
-      const here = new URL(this.view.webContents.getURL())
-      if (here.pathname === '/watch' && here.searchParams.get('v') === this.videoId) return
-    } catch {
-      // unparsable URL (e.g. about:blank): fall through and navigate
-    }
+    if (this.isTrackPage(this.view.webContents.getURL())) return
     this.navigate(this.view, this.videoId)
   }
 
@@ -83,10 +90,16 @@ export class YtPlayer {
   reclaim(): void {
     if (!this.videoId || !this.view || this.reclaiming) return
     this.reclaiming = true
+    this.reclaimTimer = setTimeout(() => this.endReclaim(), RECLAIM_TIMEOUT_MS)
     this.holding = true
     // The old document keeps playing the other song until the reload commits.
     this.view.webContents.send(YT_PAGE.command, { cmd: 'hold', value: 1 })
     this.navigate(this.view, this.videoId)
+  }
+
+  private endReclaim(): void {
+    clearTimeout(this.reclaimTimer)
+    this.reclaiming = false
   }
 
   private navigate(view: WebContentsView, videoId: string): void {
@@ -98,7 +111,7 @@ export class YtPlayer {
   unload(): void {
     this.videoId = null
     this.holding = false
-    this.reclaiming = false
+    this.endReclaim()
     if (!this.view) return
     void this.view.webContents.loadURL('about:blank').catch(() => undefined)
     this.applyBounds()
@@ -112,6 +125,8 @@ export class YtPlayer {
   command(command: YtCommand): void {
     if (command.cmd === 'analyse') this.analysing = command.value === 1
     if (command.cmd === 'limiter') this.limiting = command.value === 1
+    // The old document still holds the other song until the reload commits; playing it would start that song again.
+    if (command.cmd === 'play' && this.reclaiming) return
     if (command.cmd === 'play' && this.holding) {
       this.holding = false
       this.view?.webContents.send(YT_PAGE.command, { cmd: 'hold', value: 0 })
@@ -131,6 +146,7 @@ export class YtPlayer {
     this.view.webContents.close()
     this.view = null
     this.videoId = null
+    this.endReclaim()
   }
 
   private applyBounds(): void {
@@ -182,11 +198,11 @@ export class YtPlayer {
       if (this.limiting) wc.send(YT_PAGE.command, { cmd: 'limiter', value: 1 })
     })
     // The old document, whose clocks still name the other song, is gone once a main-frame navigation commits or fails.
-    wc.on('did-navigate', () => {
-      this.reclaiming = false
+    wc.on('did-navigate', (_e, url) => {
+      if (this.isTrackPage(url)) this.endReclaim()
     })
     wc.on('did-fail-load', (_e, _code, _desc, _url, isMainFrame) => {
-      if (isMainFrame) this.reclaiming = false
+      if (isMainFrame) this.endReclaim()
     })
     wc.on('will-navigate', guard)
     wc.on('will-redirect', guard)

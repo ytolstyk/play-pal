@@ -22,3 +22,6 @@ export function parseVideoId(input: string): string | null {
 }
 
 export const watchUrl = (videoId: string): string => `https://music.youtube.com/watch?v=${videoId}`
+
+/** Name of a YouTube Music track whose title is not known. */
+export const ytFallbackTitle = (videoId: string): string => `YouTube Music ${videoId}`

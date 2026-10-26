@@ -5,6 +5,7 @@ import { Player } from './components/Player'
 import { SettingsPanel } from './components/SettingsPanel'
 import { Sidebar } from './components/Sidebar'
 import { StatusBar } from './components/StatusBar'
+import { useAdvancedOffer } from './hooks/useAdvancedOffer'
 import { useLibrary, type LibraryApi } from './hooks/useLibrary'
 import { useLimiter } from './hooks/useLimiter'
 import { useMidiStatus } from './hooks/useMidiStatus'
@@ -38,11 +39,14 @@ export function App(): React.JSX.Element {
 
   // Main serves a file track's audio from the saved library, so adding waits for the save.
   const addTrack = useCallback(
-    async (t: Track) => {
-      if (await update((lib) => ({ ...lib, tracks: [...lib.tracks, t] }), true)) setSelectedId(t.id)
+    async (t: Track, select = true) => {
+      if (await update((lib) => ({ ...lib, tracks: [...lib.tracks, t] }), true) && select) setSelectedId(t.id)
     },
     [update]
   )
+  // A song YouTube Music moved on to is kept in the library without leaving the track that was playing.
+  const keepSong = useCallback((t: Track) => void addTrack(t, false), [addTrack])
+  const { offered, dismiss, accept } = useAdvancedOffer(library, selectedId, keepSong)
 
   const deleteTrack = useCallback(
     (id: string) => {
@@ -76,6 +80,19 @@ export function App(): React.JSX.Element {
         />
         <Bus />
         <main>
+          {offered && (
+            <div className="offer" role="status">
+              <span>
+                YouTube Music moved on to <strong>{offered.title}</strong> on its own. Add it as a separate track?
+              </span>
+              <button className="primary small" onClick={accept}>
+                Add track
+              </button>
+              <button className="ghost small" onClick={dismiss}>
+                Dismiss
+              </button>
+            </div>
+          )}
           {track ? (
             <Player key={track.id} track={track} suspendVideo={settingsOpen} onChange={changeTrack} />
           ) : (

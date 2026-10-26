@@ -33,16 +33,17 @@ const RATES = [0.5, 0.75, 0.9, 1]
 const YT_BOUNDS_POLL_MS = 250
 const YT_HEIGHT = { min: 160, max: 900, default: 340, keyStep: 20, storageKey: 'ytSlotHeight' }
 
-type View = 'video' | 'visualizer'
-const VIEW_KEY = 'viewMode'
+type View = 'video' | 'visualizer' | 'none'
+// Separate keys: a choice made on a local file (no video) must not hide the next YouTube track's video.
+const VIEW_KEYS = { yt: 'viewMode', file: 'fileViewMode' } as const
 const VIZ_KEY = 'visualizer'
 
-const VIEW_OPTIONS = [
-  { value: 'video', label: 'Video' },
-  { value: 'visualizer', label: 'Visualizer' }
-] as const
+const VIEW_NONE = { value: 'none', label: 'None' } as const
+const VIEW_VISUALIZER = { value: 'visualizer', label: 'Visualizer' } as const
+const YT_VIEW_OPTIONS = [{ value: 'video', label: 'Video' }, VIEW_VISUALIZER, VIEW_NONE] as const
+const FILE_VIEW_OPTIONS = [VIEW_VISUALIZER, VIEW_NONE] as const
 const VIZ_OPTIONS = VISUALIZERS.map((v) => ({ value: v.kind, label: v.label }))
-const isView = (v: unknown): v is View => v === 'video' || v === 'visualizer'
+const isView = (v: unknown): v is View => v === 'video' || v === 'visualizer' || v === 'none'
 
 const clampYtHeight = (h: number): number => Math.min(YT_HEIGHT.max, Math.max(YT_HEIGHT.min, Math.round(h)))
 
@@ -87,11 +88,14 @@ export function Player({ track, suspendVideo, onChange }: Props): React.JSX.Elem
   const [ytHeight, setYtHeight] = useState(loadYtHeight)
   const slotRef = useRef<HTMLDivElement>(null)
   const isYt = track.source.kind === 'ytmusic'
-  const [view, setView] = useState<View>(() => loadStored(VIEW_KEY, isView, 'video'))
+  const viewKey = isYt ? VIEW_KEYS.yt : VIEW_KEYS.file
+  const [view, setView] = useState<View>(() => loadStored(viewKey, isView, isYt ? 'video' : 'visualizer'))
   const [viz, setViz] = useState<VizKind>(() => loadStored(VIZ_KEY, isVizKind, 'bars'))
-  // Local files have no picture, so they always show the visualizer; YouTube Music can swap either way.
-  // Hiding the video only hides its view: the page keeps playing underneath.
-  const showViz = !isYt || view === 'visualizer'
+  // Local files have no picture, so their only panel is the visualizer; YouTube Music can swap either way.
+  // Either can be hidden ('none'); hiding the video only hides its view: the page keeps playing underneath.
+  const panel: View = isYt || view === 'none' ? view : 'visualizer'
+  const showViz = panel === 'visualizer'
+  const showVideo = panel === 'video'
   // The waveform is recorded from the same feed; YouTube Music only streams it while something wants it.
   const wave = useWaveform(track.id, state.duration, state.playing)
   const feed = useAudioFeed(isYt ? 'yt' : 'file', audioRef, showViz || wave.wantsFrames, state.playing)
@@ -150,7 +154,7 @@ export function Player({ track, suspendVideo, onChange }: Props): React.JSX.Elem
   // The YouTube Music view is a native overlay; keep it glued to the slot's rectangle.
   useEffect(() => {
     const slot = slotRef.current
-    if (showViz || suspendVideo || !slot) return
+    if (!showVideo || suspendVideo || !slot) return
     let last = ''
     const report = (): void => {
       const r = slot.getBoundingClientRect()
@@ -172,7 +176,7 @@ export function Player({ track, suspendVideo, onChange }: Props): React.JSX.Elem
       window.removeEventListener('resize', report)
       window.api.setYtBounds(null)
     }
-  }, [showViz, suspendVideo])
+  }, [showVideo, suspendVideo])
 
   const addCue = useCallback(() => {
     onChange((t) => {
@@ -247,17 +251,15 @@ export function Player({ track, suspendVideo, onChange }: Props): React.JSX.Elem
         aria-label="Track title"
         onChange={(e) => onChange((t) => ({ ...t, title: e.target.value }))}
       />
-      {isYt && (
-        <Segmented
-          label="Video or visualizer"
-          options={VIEW_OPTIONS}
-          value={view}
-          onChange={(v) => {
-            setView(v)
-            saveStored(VIEW_KEY, v)
-          }}
-        />
-      )}
+      <Segmented
+        label={isYt ? 'Video, visualizer or none' : 'Visualizer or none'}
+        options={isYt ? YT_VIEW_OPTIONS : FILE_VIEW_OPTIONS}
+        value={panel}
+        onChange={(v) => {
+          setView(v)
+          saveStored(viewKey, v)
+        }}
+      />
       {showViz && (
         <Segmented
           label="Visualizer style"
@@ -270,33 +272,36 @@ export function Player({ track, suspendVideo, onChange }: Props): React.JSX.Elem
         />
       )}
       {!isYt && <audio ref={audioRef} src={`ppfile://t/${track.id}`} crossOrigin="anonymous" preload="auto" />}
-      {showViz ? (
+      {showViz && (
         <div className="yt-slot viz-slot" style={{ height: ytHeight }}>
           <Visualizer feed={feed} kind={viz} playing={state.playing} />
         </div>
-      ) : (
+      )}
+      {showVideo && (
         <div className="yt-slot" ref={slotRef} style={{ height: ytHeight }}>
           <p className="muted small">YouTube Music loads here. Sign in once and the session is remembered.</p>
         </div>
       )}
-      <div
-        className="yt-resize"
-        role="separator"
-        aria-orientation="horizontal"
-        aria-label="Resize video view"
-        aria-valuemin={YT_HEIGHT.min}
-        aria-valuemax={YT_HEIGHT.max}
-        aria-valuenow={ytHeight}
-        tabIndex={0}
-        onPointerDown={startResize}
-        onDoubleClick={() => changeYtHeight(YT_HEIGHT.default)}
-        onKeyDown={(e) => {
-          const dir = e.key === 'ArrowDown' ? 1 : e.key === 'ArrowUp' ? -1 : 0
-          if (!dir) return
-          e.preventDefault()
-          changeYtHeight(clampYtHeight(ytHeight + dir * YT_HEIGHT.keyStep))
-        }}
-      />
+      {panel !== 'none' && (
+        <div
+          className="yt-resize"
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label="Resize view"
+          aria-valuemin={YT_HEIGHT.min}
+          aria-valuemax={YT_HEIGHT.max}
+          aria-valuenow={ytHeight}
+          tabIndex={0}
+          onPointerDown={startResize}
+          onDoubleClick={() => changeYtHeight(YT_HEIGHT.default)}
+          onKeyDown={(e) => {
+            const dir = e.key === 'ArrowDown' ? 1 : e.key === 'ArrowUp' ? -1 : 0
+            if (!dir) return
+            e.preventDefault()
+            changeYtHeight(clampYtHeight(ytHeight + dir * YT_HEIGHT.keyStep))
+          }}
+        />
+      )}
       <Wire variant="a" />
       <div className="transport">
         <div className="transport-row">

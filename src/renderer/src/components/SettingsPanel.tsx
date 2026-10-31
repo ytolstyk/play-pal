@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { THEME_PRESETS, type Theme } from '../theme'
+import type { AudioOutput } from '../hooks/useAudioOutput'
 import type { LibraryApi } from '../hooks/useLibrary'
 import { BackupsSection } from './BackupsSection'
 
@@ -8,13 +9,14 @@ interface Props {
   onChange(theme: Theme): void
   limiter: boolean
   onLimiterChange(on: boolean): void
+  output: AudioOutput
   onReplaceLibrary: LibraryApi['replace']
   onClose(): void
 }
 
 const sameColor = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase()
 
-export function SettingsPanel({ theme, onChange, limiter, onLimiterChange, onReplaceLibrary, onClose }: Props): React.JSX.Element {
+export function SettingsPanel({ theme, onChange, limiter, onLimiterChange, output, onReplaceLibrary, onClose }: Props): React.JSX.Element {
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') onClose()
@@ -63,6 +65,25 @@ export function SettingsPanel({ theme, onChange, limiter, onLimiterChange, onRep
             <input type="color" value={theme.secondary} onChange={(e) => onChange({ ...theme, secondary: e.target.value })} />
             Secondary trim
           </label>
+        </div>
+        <h3 className="muted small">Output device</h3>
+        <div className="custom">
+          <select
+            className="output-select"
+            aria-label="Output device"
+            value={output.choice}
+            onChange={(e) => output.select(e.target.value)}
+          >
+            <option value="">System default</option>
+            {output.devices.map((d) => (
+              <option key={d.id} value={d.label}>
+                {d.label}
+              </option>
+            ))}
+            {output.missing && (
+              <option value={output.choice}>{output.choice} (not connected)</option>
+            )}
+          </select>
         </div>
         <h3 className="muted small">YouTube Music audio</h3>
         <div className="custom">

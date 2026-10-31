@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type RefObject } from 'react'
 import type { PlaybackState, Track } from '../../../shared/types'
+import { routeTo } from '../audioSink'
 
 const IDLE: PlaybackState = { t: 0, duration: 0, playing: false, rate: 1 }
 const UI_INTERVAL_MS = 50
@@ -44,7 +45,7 @@ export interface Playback {
  * clock to main; YouTube Music plays in a main-owned view and its clock is pushed back.
  * Main runs the cues either way.
  */
-export function usePlayback(track: Track): Playback {
+export function usePlayback(track: Track, sinkId: string): Playback {
   const isFile = track.source.kind === 'file'
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const [state, setState] = useState<Transport>(IDLE)
@@ -120,6 +121,11 @@ export function usePlayback(track: Track): Playback {
       clearInterval(timer)
     }
   }, [isFile, track.id, apply])
+
+  // Once the visualizer has routed the element through Web Audio this has no effect; useAudioFeed moves that context.
+  useEffect(() => {
+    if (audioRef.current) routeTo(audioRef.current, sinkId)
+  }, [sinkId])
 
   /** The single file-vs-YouTube dispatch point for transport commands. */
   const command = useCallback(

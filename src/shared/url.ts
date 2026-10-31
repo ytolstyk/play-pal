@@ -21,7 +21,18 @@ export function parseVideoId(input: string): string | null {
   return isVideoId(id) ? id : null
 }
 
-export const watchUrl = (videoId: string): string => `https://music.youtube.com/watch?v=${videoId}`
+export const YT_ORIGIN = 'https://music.youtube.com'
+
+/** Origin of a URL (or of a permission's requesting origin, which Chromium also writes as a URL); null if it is not one. */
+export const originOf = (url: string | undefined): string | null => {
+  try {
+    return url ? new URL(url).origin : null
+  } catch {
+    return null
+  }
+}
+
+export const watchUrl = (videoId: string): string => `${YT_ORIGIN}/watch?v=${videoId}`
 
 /** Name of a YouTube Music track whose title is not known. */
 export const ytFallbackTitle = (videoId: string): string => `YouTube Music ${videoId}`

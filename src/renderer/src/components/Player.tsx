@@ -26,6 +26,8 @@ interface Props {
    * page, so it is hidden (setYtBounds(null)) and the play/cue hotkeys are ignored meanwhile.
    */
   suspendVideo: boolean
+  /** Output device id for the track's audio ('' = the system default). */
+  sinkId: string
   onChange(change: (t: Track) => Track): void
 }
 
@@ -59,8 +61,8 @@ const ARROW_KEYS = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']
 const ownsArrowKeys = (t: EventTarget | null): boolean =>
   t instanceof HTMLElement && ((t instanceof HTMLInputElement && t.type === 'range') || t.getAttribute('role') === 'separator')
 
-export function Player({ track, suspendVideo, onChange }: Props): React.JSX.Element {
-  const { state, clock, timeRef, audioRef, starting, toggle, restart, seek, setRate, setVolume } = usePlayback(track)
+export function Player({ track, suspendVideo, sinkId, onChange }: Props): React.JSX.Element {
+  const { state, clock, timeRef, audioRef, starting, toggle, restart, seek, setRate, setVolume } = usePlayback(track, sinkId)
   const { pending, skip, cancel: cancelSkip } = useSkip(seek, timeRef, state.duration, track.id)
   // A direct seek (scrub, cue click) supersedes a skip still waiting out its debounce.
   const seekTo = useCallback(
@@ -98,7 +100,7 @@ export function Player({ track, suspendVideo, onChange }: Props): React.JSX.Elem
   const showVideo = panel === 'video'
   // The waveform is recorded from the same feed; YouTube Music only streams it while something wants it.
   const wave = useWaveform(track.id, state.duration, state.playing)
-  const feed = useAudioFeed(isYt ? 'yt' : 'file', audioRef, showViz || wave.wantsFrames, state.playing)
+  const feed = useAudioFeed(isYt ? 'yt' : 'file', audioRef, showViz || wave.wantsFrames, state.playing, sinkId)
   useWaveRecorder({ wave, feed, clock, playing: state.playing, rate: state.rate, volume })
 
   // Dragging applies the volume live; it is saved on the track once, on release.

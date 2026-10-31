@@ -1,5 +1,5 @@
 import { isFiniteNumber, isObject, isVolume } from './guards'
-import { MAX_TITLE, type ClockSample, type PlaybackState, type Rect, type YtCommand } from './types'
+import { MAX_DEVICE_LABEL, MAX_TITLE, type ClockSample, type PlaybackState, type Rect, type YtCommand } from './types'
 
 const MAX_RECT = 20000
 
@@ -46,6 +46,7 @@ export function readYtCommand(raw: unknown): YtCommand | null {
   if ((cmd === 'seek' || cmd === 'rate') && isFiniteNumber(value) && value >= 0) return { cmd, value }
   if (cmd === 'volume' && isVolume(value)) return { cmd, value }
   if ((cmd === 'analyse' || cmd === 'limiter') && (value === 0 || value === 1)) return { cmd, value }
+  if (cmd === 'output' && typeof value === 'string' && value.length <= MAX_DEVICE_LABEL) return { cmd, value }
   return null
 }
 

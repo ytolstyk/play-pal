@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, type RefObject } from 'react'
+import { routeTo } from '../audioSink'
 import {
   ANALYSER_MAX_DB,
   ANALYSER_MIN_DB,
@@ -26,9 +27,9 @@ const SILENT: AudioFeed = { read: () => null }
  * from this graph, so the context is resumed on every `play` and the graph stays connected
  * to the output for the element's life.
  */
-function createFileFeed(audio: HTMLAudioElement): { feed: AudioFeed; close(): void } | null {
+function createFileFeed(audio: HTMLAudioElement, sinkId: string): { feed: AudioFeed; setSink(id: string): void; close(): void } | null {
   try {
-    const ctx = new AudioContext()
+    const ctx = new AudioContext({ sinkId }) // on the chosen device from the start, so nothing is heard on the default one
     const analyser = ctx.createAnalyser()
     analyser.fftSize = FFT_SIZE
     analyser.smoothingTimeConstant = SMOOTHING
@@ -49,6 +50,7 @@ function createFileFeed(audio: HTMLAudioElement): { feed: AudioFeed; close(): vo
           return { freq, wave: wave.subarray(0, WAVE_SAMPLES) }
         }
       },
+      setSink: (id) => routeTo(ctx, id),
       close: () => {
         audio.removeEventListener('play', resume)
         void ctx.close().catch(() => undefined)
@@ -70,9 +72,14 @@ export function useAudioFeed(
   source: FeedSource,
   audioRef: RefObject<HTMLAudioElement | null>,
   active: boolean,
-  playing: boolean
+  playing: boolean,
+  sinkId: string
 ): AudioFeed {
-  const file = useRef<{ el: HTMLAudioElement; feed: AudioFeed; close(): void } | null>(null)
+  const file = useRef<{ el: HTMLAudioElement; feed: AudioFeed; setSink(id: string): void; close(): void } | null>(null)
+  const sinkRef = useRef(sinkId)
+  useEffect(() => {
+    sinkRef.current = sinkId
+  }, [sinkId])
   const alive = useRef(true)
   const remote = useRef<{ frame: AudioFrame; at: number } | null>(null)
 
@@ -94,9 +101,15 @@ export function useAudioFeed(
     if (!active || source !== 'file' || !audio || file.current?.el === audio) return
     // An element can be captured once, so a different element needs a fresh graph.
     file.current?.close()
-    const made = createFileFeed(audio)
+    const made = createFileFeed(audio, sinkRef.current)
     file.current = made && { el: audio, ...made }
   }, [active, source, audioRef])
+
+  // Once the element is captured its sound comes only from this context, so the context follows the chosen device.
+  // Declared after the effect that creates the graph so a new graph is routed in the same pass.
+  useEffect(() => {
+    file.current?.setSink(sinkId)
+  }, [sinkId, active, source])
 
   useEffect(() => {
     // Streaming costs the YouTube page, main and this window, so only while something is moving.

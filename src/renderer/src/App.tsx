@@ -7,6 +7,7 @@ import { Sidebar } from './components/Sidebar'
 import { StatusBar } from './components/StatusBar'
 import { useAdvancedOffer } from './hooks/useAdvancedOffer'
 import { useLibrary, type LibraryApi } from './hooks/useLibrary'
+import { useAudioOutput } from './hooks/useAudioOutput'
 import { useLimiter } from './hooks/useLimiter'
 import { useMidiStatus } from './hooks/useMidiStatus'
 import { useTheme } from './hooks/useTheme'
@@ -17,6 +18,7 @@ export function App(): React.JSX.Element {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [theme, setTheme] = useTheme()
   const [limiter, setLimiter] = useLimiter()
+  const output = useAudioOutput()
   const [settingsOpen, setSettingsOpen] = useState(false)
   const closeSettings = useCallback(() => setSettingsOpen(false), [])
 
@@ -94,7 +96,7 @@ export function App(): React.JSX.Element {
             </div>
           )}
           {track ? (
-            <Player key={track.id} track={track} suspendVideo={settingsOpen} onChange={changeTrack} />
+            <Player key={track.id} track={track} suspendVideo={settingsOpen} sinkId={output.sinkId} onChange={changeTrack} />
           ) : (
             <p className="muted empty">Add a local file or paste a YouTube Music link to get started.</p>
           )}
@@ -111,7 +113,7 @@ export function App(): React.JSX.Element {
           void update((lib) => ({ ...lib, leadMs: ms }), true)
         }}
       />
-      {settingsOpen && <SettingsPanel theme={theme} onChange={setTheme} limiter={limiter} onLimiterChange={setLimiter} onReplaceLibrary={replaceLibrary} onClose={closeSettings} />}
+      {settingsOpen && <SettingsPanel theme={theme} onChange={setTheme} limiter={limiter} onLimiterChange={setLimiter} output={output} onReplaceLibrary={replaceLibrary} onClose={closeSettings} />}
     </div>
   )
 }

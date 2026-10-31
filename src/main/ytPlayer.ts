@@ -1,7 +1,7 @@
 import { WebContentsView, session, type BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import { YT_PAGE } from '../shared/ipc'
-import { watchUrl } from '../shared/url'
+import { originOf, watchUrl, YT_ORIGIN } from '../shared/url'
 import type { Rect, YtCommand } from '../shared/types'
 
 const PARTITION = 'persist:ytmusic'
@@ -42,6 +42,8 @@ export class YtPlayer {
   private videoId: string | null = null
   private analysing = false
   private limiting = false
+  /** Label of the output device the page should play on; '' is the system default. */
+  private outputLabel = ''
   /** The page must not start playing by itself (the track's start preset goes out first); cleared by the first play command. */
   private holding = false
   /** A reload of the track's page is under way after the page left it; repeat reclaim() calls are no-ops until the new document commits (or the load fails). */
@@ -125,6 +127,7 @@ export class YtPlayer {
   command(command: YtCommand): void {
     if (command.cmd === 'analyse') this.analysing = command.value === 1
     if (command.cmd === 'limiter') this.limiting = command.value === 1
+    if (command.cmd === 'output') this.outputLabel = command.value
     // The old document still holds the other song until the reload commits; playing it would start that song again.
     if (command.cmd === 'play' && this.reclaiming) return
     if (command.cmd === 'play' && this.holding) {
@@ -132,6 +135,17 @@ export class YtPlayer {
       this.view?.webContents.send(YT_PAGE.command, { cmd: 'hold', value: 0 })
     }
     this.view?.webContents.send(YT_PAGE.command, command)
+  }
+
+  /**
+   * While a device is chosen the page may list audio device names and route to one (Chromium asks 'media' for the
+   * names, 'speaker-selection' for the routing). This is a *check* only: the request handler stays deny-all, so
+   * nothing can be captured, and camera labels are never offered.
+   */
+  private allowsOutputProbe(permission: string, origin: string, details: { mediaType?: string; isMainFrame?: boolean }): boolean {
+    if (this.outputLabel === '' || originOf(origin) !== YT_ORIGIN) return false
+    if (permission === 'speaker-selection') return true
+    return permission === 'media' && details.mediaType === 'audio' && details.isMainFrame === true
   }
 
   /** Whether the visualizer wants frames; main owns this so it survives page loads. */
@@ -162,7 +176,9 @@ export class YtPlayer {
     if (!win || win.isDestroyed()) return null
     const ses = session.fromPartition(PARTITION)
     ses.setPermissionRequestHandler((_wc, _perm, deny) => deny(false))
-    ses.setPermissionCheckHandler(() => false)
+    ses.setPermissionCheckHandler((wc, permission, origin, details) =>
+      wc === this.view?.webContents && this.allowsOutputProbe(permission, origin, details)
+    )
     ses.on('will-download', (e) => e.preventDefault())
     // Google refuses sign-in from user agents that announce Electron.
     ses.setUserAgent(ses.getUserAgent().replace(/\sElectron\/\S+/, ''))
@@ -191,11 +207,14 @@ export class YtPlayer {
     // A new page starts without the analysis tap; replay what the visualizer wants.
     wc.on('dom-ready', () => {
       if (this.holding) wc.send(YT_PAGE.command, { cmd: 'hold', value: 1 })
+      // Before the page builds its audio graph, so that starts on the chosen device.
+      if (this.outputLabel) wc.send(YT_PAGE.command, { cmd: 'output', value: this.outputLabel })
     })
     wc.on('did-finish-load', () => {
       if (this.holding) wc.send(YT_PAGE.command, { cmd: 'hold', value: 1 })
       if (this.analysing) wc.send(YT_PAGE.command, { cmd: 'analyse', value: 1 })
       if (this.limiting) wc.send(YT_PAGE.command, { cmd: 'limiter', value: 1 })
+      if (this.outputLabel) wc.send(YT_PAGE.command, { cmd: 'output', value: this.outputLabel })
     })
     // The old document, whose clocks still name the other song, is gone once a main-frame navigation commits or fails.
     wc.on('did-navigate', (_e, url) => {

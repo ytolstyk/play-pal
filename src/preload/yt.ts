@@ -19,7 +19,7 @@ const VOLUME_EPSILON = 0.005
 const MIN_RATE = 0.25
 const MAX_RATE = 2
 /** Only the real site may drive cues; a page reached by any other route reports nothing. */
-const TRUSTED_ORIGIN = 'https://music.youtube.com'
+const TRUSTED_ORIGIN = 'https://music.youtube.com' // shared/url.ts YT_ORIGIN; a preload cannot import it
 
 const video = (): HTMLVideoElement | null => document.querySelector('video')
 
@@ -78,10 +78,11 @@ setInterval(() => {
   if (usingWebAudio) {
     // The page's own volume multiplies into the graph's input; the app's level is the gain node alone.
     pinElementVolume(v, UNITY_GAIN)
-    if (!v.paused) resumeContext()
   } else if (wantedVolume !== null) {
     pinElementVolume(v, wantedVolume)
   }
+  // Also when Web Audio failed after capturing the element: its only output is then the context.
+  if (!v.paused) resumeContext()
   const now = Date.now()
   const playing = !v.paused && !v.ended
   const videoId = currentVideoId()
@@ -128,9 +129,79 @@ let graph: Graph | null = null
 let audioCtx: AudioContext | null = null
 let limiterOn = false
 let resuming = false
+/** Output switches in flight; the context stays suspended meanwhile so nothing is heard on the wrong device. */
+let routing = 0
 // An element can be captured only once, ever, so its source node is kept for reuse if the page swaps back to it.
 const sources = new WeakMap<HTMLVideoElement, MediaElementAudioSourceNode>()
 const failed = new WeakSet<HTMLVideoElement>()
+
+/** Label of the output device the app chose ('' = system default). Device ids differ between sessions, so the page finds its own id by name. */
+let outputLabel = ''
+let latestApplyRun = 0
+/** An output switch that takes longer than this stops holding the context suspended (a stuck device must not mean silence). */
+const OUTPUT_SWITCH_TIMEOUT_MS = 3000
+
+const withTimeout = <T>(work: Promise<T>): Promise<T> =>
+  Promise.race([
+    work,
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error('output switch timed out')), OUTPUT_SWITCH_TIMEOUT_MS))
+  ])
+
+const findSinkId = async (): Promise<string> => {
+  if (!outputLabel) return ''
+  const devices = await navigator.mediaDevices.enumerateDevices()
+  const match = devices.find((d) => d.kind === 'audiooutput' && d.label === outputLabel)
+  if (!match) console.warn(`[ytmusic] output device "${outputLabel}" not found; using the system default`)
+  return match?.deviceId ?? ''
+}
+
+interface SinkTarget {
+  readonly sinkId: string | { type: 'none' }
+  setSinkId(id: string): Promise<void>
+}
+const requestedSink = new WeakMap<SinkTarget, string>()
+const currentSink = (t: SinkTarget): string => (typeof t.sinkId === 'string' ? t.sinkId : '')
+
+/** Moves the context (or, when Web Audio failed for this page's video, the element itself) onto the device. */
+const routeAudio = async (id: string): Promise<void> => {
+  const v = video()
+  const targets: SinkTarget[] = []
+  if (audioCtx) targets.push(audioCtx)
+  if (v && failed.has(v)) targets.push(v)
+  // Compared with what was last asked for, not what has landed, so a quick A -> B -> A is not mistaken for "already on A".
+  const pending = targets.filter((t) => (requestedSink.get(t) ?? currentSink(t)) !== id)
+  await Promise.all(
+    pending.map(async (t) => {
+      requestedSink.set(t, id)
+      try {
+        await t.setSinkId(id)
+      } catch (error) {
+        if (requestedSink.get(t) === id) requestedSink.delete(t)
+        throw error
+      }
+    })
+  )
+}
+
+/** Routes the page's audio to the chosen device; if calls overlap, only the latest takes effect. */
+const applyOutput = async (): Promise<void> => {
+  const run = ++latestApplyRun
+  routing++
+  try {
+    const id = await withTimeout(findSinkId())
+    if (run !== latestApplyRun) return
+    await withTimeout(routeAudio(id))
+  } catch (error) {
+    console.warn('[ytmusic] could not switch the output device', error)
+  } finally {
+    routing--
+    if (!routing && video()?.paused === false) resumeContext()
+  }
+}
+// Fires for microphones and cameras too, and in bursts; routeAudio skips a device the audio is already on.
+navigator.mediaDevices.addEventListener('devicechange', () => {
+  if (outputLabel) void applyOutput()
+})
 
 let analyseTimer: ReturnType<typeof setInterval> | null = null
 
@@ -139,7 +210,7 @@ const waveBuf = new Uint8Array(FFT_SIZE)
 
 /** A suspended context would mute the video. */
 const resumeContext = (): void => {
-  if (resuming || !audioCtx || audioCtx.state === 'running') return
+  if (resuming || routing > 0 || !audioCtx || audioCtx.state === 'running') return
   resuming = true
   void audioCtx.resume().catch(() => undefined).finally(() => { resuming = false })
 }
@@ -194,8 +265,13 @@ const ensureChain = (v: HTMLVideoElement): Graph | null => {
   if (graph?.el === v) return graph
   if (failed.has(v)) return null
   try {
+    const created = audioCtx === null
     const ctx = audioCtx ?? new AudioContext()
     audioCtx = ctx
+    if (created && outputLabel) {
+      void ctx.suspend() // a fresh context starts on the default device; applyOutput resumes it once moved
+      void applyOutput()
+    }
     // The graph is complete before any source is attached, and the old source is released only as the new one connects.
     const g = graph ?? buildGraph(ctx, v)
     let source = sources.get(v)
@@ -215,6 +291,7 @@ const ensureChain = (v: HTMLVideoElement): Graph | null => {
   } catch (error) {
     console.warn('[ytmusic] Web Audio graph failed, using the element volume', error)
     failed.add(v)
+    if (outputLabel) void applyOutput()
     // A captured element has no output of its own any more; never leave it silent.
     const captured = sources.get(v)
     if (captured && audioCtx) {
@@ -240,7 +317,7 @@ const setAnalysis = (on: boolean): void => {
   analyseTimer = on ? setInterval(sendAudioFrame, AUDIO_FRAME_MS) : null
 }
 
-ipcRenderer.on(COMMAND, (_e, command: { cmd?: string; value?: number }) => {
+ipcRenderer.on(COMMAND, (_e, command: { cmd?: string; value?: number | string }) => {
   if (typeof command === 'object' && command !== null && command.cmd === 'analyse') {
     setAnalysis(command.value === 1)
     return
@@ -249,6 +326,13 @@ ipcRenderer.on(COMMAND, (_e, command: { cmd?: string; value?: number }) => {
   if (command.cmd === 'hold') {
     holding = command.value === 1
     if (holding) video()?.pause()
+    return
+  }
+  if (command.cmd === 'output') {
+    if (typeof command.value === 'string') {
+      outputLabel = command.value
+      void applyOutput()
+    }
     return
   }
   if (command.cmd === 'limiter') {

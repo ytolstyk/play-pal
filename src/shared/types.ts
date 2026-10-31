@@ -133,6 +133,8 @@ export type YtCommand =
   | { cmd: 'analyse'; value: 0 | 1 }
   /** 1 routes the page's audio through a limiter that tames sudden loud bursts. */
   | { cmd: 'limiter'; value: 0 | 1 }
+  /** Plays the page's audio on the output device with this label ('' = the system default). Device ids differ per session, so the label is the shared name. */
+  | { cmd: 'output'; value: string }
 
 export const DEFAULT_VOLUME = 1
 export const PORT_BASE_NAME = 'Play Pal'
@@ -144,6 +146,7 @@ export const MIDI_CHANNEL_MIN = 1
 export const MIDI_CHANNEL_MAX = 16
 export const MIDI_DATA_MAX = 127
 export const MAX_TITLE = 200
+export const MAX_DEVICE_LABEL = 200
 export const MAX_LABEL = 100
 export const MAX_TRACKS = 500
 export const MAX_CUES = 200

@@ -24,7 +24,7 @@ import { IPC, YT_PAGE } from '../shared/ipc'
 import { clampInt } from '../shared/guards'
 import { AUDIO_FRAME_MS, readAudioFrame } from '../shared/audio'
 import { readClock, readRect, readYtCommand, readYtPageClock, type YtPageClock } from '../shared/payloads'
-import { isVideoId, ytFallbackTitle } from '../shared/url'
+import { isVideoId, originOf, YT_ORIGIN, ytFallbackTitle } from '../shared/url'
 import { isAutoAdvance } from '../shared/ytAdvance'
 import {
   AUDIO_EXTENSIONS,
@@ -53,7 +53,6 @@ const MAX_SAMPLE_AGE_MS = 250
 /** Frames from the page arrive every ~33 ms; anything faster is not from our preload. */
 const MIN_AUDIO_PUSH_MS = AUDIO_FRAME_MS / 2
 const FILE_SCHEME = 'ppfile'
-const YT_ORIGIN = 'https://music.youtube.com'
 
 protocol.registerSchemesAsPrivileged([
   { scheme: FILE_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }
@@ -164,14 +163,6 @@ function registerFileProtocol(): void {
 
 /** Only our own window may drive playback, MIDI or the library. */
 const trusted = (e: IpcMainEvent | IpcMainInvokeEvent): boolean => win !== null && e.sender === win.webContents
-
-const originOf = (url: string | undefined): string | null => {
-  try {
-    return url ? new URL(url).origin : null
-  } catch {
-    return null
-  }
-}
 
 let lastPlaybackPush = { at: 0, playing: false, rate: 1 }
 function pushPlayback(state: PlaybackState): void {

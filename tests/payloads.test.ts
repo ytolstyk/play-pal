@@ -34,6 +34,13 @@ describe('payload readers', () => {
     expect(readYtCommand({ cmd: 'seek', value: -1 })).toBeNull()
     expect(readYtCommand({ cmd: 'seek' })).toBeNull()
     expect(readYtCommand({ cmd: 'eval', value: 1 })).toBeNull()
+    expect(readYtCommand({ cmd: 'output', value: 'USB DAC' })).toEqual({ cmd: 'output', value: 'USB DAC' })
+    expect(readYtCommand({ cmd: 'output', value: '' })).toEqual({ cmd: 'output', value: '' })
+    expect(readYtCommand({ cmd: 'output', value: 'x'.repeat(200) })).not.toBeNull()
+    expect(readYtCommand({ cmd: 'output', value: 'x'.repeat(201) })).toBeNull()
+    expect(readYtCommand({ cmd: 'output' })).toBeNull()
+    expect(readYtCommand({ cmd: 'output', value: null })).toBeNull()
+    expect(readYtCommand({ cmd: 'output', value: 3 })).toBeNull()
   })
   it('readRect rejects degenerate or absurd rectangles', () => {
     expect(readRect({ x: 1, y: 2, width: 3, height: 4 })).toEqual({ x: 1, y: 2, width: 3, height: 4 })

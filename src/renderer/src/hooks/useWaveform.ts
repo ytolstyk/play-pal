@@ -3,6 +3,7 @@ import { bandLevels, binCount, binTotalOf, SAVED_LENGTH_TOLERANCE_BINS, WAVE_BAN
 import { ClockTracker } from '../clockTracker'
 import type { AudioFeed } from './useAudioFeed'
 import type { Clock } from './usePlayback'
+import { isWindowActive, subscribeWindowActive } from '../windowActivity'
 
 /** How often the waveform on screen catches up with what has been recorded. */
 const REDRAW_MS = 200
@@ -44,6 +45,7 @@ export function useWaveform(trackId: string, duration: number, playing: boolean)
   const revisionRef = useRef(0)
   const listeners = useRef(new Set<() => void>())
   const dirty = useRef(false)
+  const stale = useRef(false)
   const redrawTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const saving = useRef<Promise<unknown>>(Promise.resolve())
   const lastShown = useRef<Uint8Array | null>(null)
@@ -95,17 +97,35 @@ export function useWaveform(trackId: string, duration: number, playing: boolean)
   }, [])
   const revision = useCallback(() => revisionRef.current, [])
 
+  /** Tells every canvas the bins changed, unless the window is behind another one (then it is remembered for later). */
+  const announce = useCallback(() => {
+    if (!isWindowActive()) {
+      stale.current = true
+      return
+    }
+    stale.current = false
+    revisionRef.current++
+    for (const l of listeners.current) l()
+  }, [])
+
   const markChanged = useCallback(() => {
     dirty.current = true
     if (redrawTimer.current !== undefined) return
     redrawTimer.current = setTimeout(() => {
       redrawTimer.current = undefined
-      revisionRef.current++
-      for (const l of listeners.current) l()
+      announce()
     }, REDRAW_MS)
-  }, [])
+  }, [announce])
 
   useEffect(() => () => clearTimeout(redrawTimer.current), [])
+  // Nothing redraws behind another window; the screen catches up in one go when this one comes back.
+  useEffect(
+    () =>
+      subscribeWindowActive(() => {
+        if (isWindowActive() && stale.current) announce()
+      }),
+    [announce]
+  )
 
   useEffect(() => {
     if (!recorder) return

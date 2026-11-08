@@ -4,6 +4,7 @@ import { DEFAULT_CUE_ACTION, sortedByTime } from '../../../shared/cues'
 import { formatTime, roundMs } from '../../../shared/time'
 import { DEFAULT_VOLUME, MAX_TITLE } from '../../../shared/types'
 import { useAudioFeed } from '../hooks/useAudioFeed'
+import { isWindowActive, subscribeWindowActive } from '../windowActivity'
 import { useWaveform, useWaveRecorder } from '../hooks/useWaveform'
 import { isTypingTarget } from '../keyboard'
 import { loadStored, saveStored } from '../storage'
@@ -100,7 +101,7 @@ export function Player({ track, suspendVideo, sinkId, onChange }: Props): React.
   const showVideo = panel === 'video'
   // The waveform is recorded from the same feed; YouTube Music only streams it while something wants it.
   const wave = useWaveform(track.id, state.duration, state.playing)
-  const feed = useAudioFeed(isYt ? 'yt' : 'file', audioRef, showViz || wave.wantsFrames, state.playing, sinkId)
+  const feed = useAudioFeed(isYt ? 'yt' : 'file', audioRef, { draw: showViz, record: wave.wantsFrames }, state.playing, sinkId)
   useWaveRecorder({ wave, feed, clock, playing: state.playing, rate: state.rate, volume })
 
   // Dragging applies the volume live; it is saved on the track once, on release.
@@ -137,18 +138,18 @@ export function Player({ track, suspendVideo, sinkId, onChange }: Props): React.
 
   useEffect(() => window.api.onCueFired(setFiredId), [])
 
-  // Lets the stylesheet run the wire pulses only while playing in a visible window, so they cost
+  // Lets the stylesheet run the wire pulses only while playing in the window in front, so they cost
   // nothing when idle or behind a DAW (the window keeps running with backgroundThrottling off).
   useEffect(() => {
     const root = document.documentElement
     const sync = (): void => {
-      if (state.playing && !document.hidden) root.dataset.playing = ''
+      if (state.playing && isWindowActive()) root.dataset.playing = ''
       else delete root.dataset.playing
     }
     sync()
-    document.addEventListener('visibilitychange', sync)
+    const unsubscribe = subscribeWindowActive(sync)
     return () => {
-      document.removeEventListener('visibilitychange', sync)
+      unsubscribe()
       delete root.dataset.playing
     }
   }, [state.playing])

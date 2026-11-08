@@ -31,6 +31,8 @@ const api: Api = {
   ytReturn: () => ipcRenderer.send(IPC.ytReturn),
   onYtAdvanced: subscribe<YtAdvanced>(IPC.ytAdvanced),
   onAudioFrame: subscribe<AudioFrame>(IPC.audioFrame),
+  getWindowActive: () => ipcRenderer.invoke(IPC.windowActive),
+  onWindowActive: subscribe<boolean>(IPC.windowActive),
   loadWaveform: (trackId) => ipcRenderer.invoke(IPC.waveformLoad, trackId),
   saveWaveform: (trackId, bins) => ipcRenderer.invoke(IPC.waveformSave, trackId, bins),
   testAction: (action) => ipcRenderer.invoke(IPC.midiTest, action),

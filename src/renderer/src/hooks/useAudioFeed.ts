@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, type RefObject } from 'react'
+import { useCallback, useEffect, useMemo, useRef, type RefObject } from 'react'
 import { routeTo } from '../audioSink'
+import { isWindowActive, subscribeWindowActive } from '../windowActivity'
 import {
   ANALYSER_MAX_DB,
   ANALYSER_MIN_DB,
@@ -19,6 +20,13 @@ export interface AudioFeed {
 }
 
 export type FeedSource = 'file' | 'yt'
+
+export interface FeedWants {
+  /** A visualizer is showing. */
+  draw: boolean
+  /** The waveform recorder has gaps to fill. */
+  record: boolean
+}
 
 const SILENT: AudioFeed = { read: () => null }
 
@@ -65,16 +73,21 @@ function createFileFeed(audio: HTMLAudioElement, sinkId: string): { feed: AudioF
 /**
  * Where the visualizer gets its audio. A local file is analysed here, on the <audio> element; a
  * YouTube Music track is analysed inside its page and the frames are relayed through main.
- * `active` is whether anything is looking; the YouTube stream additionally waits for `playing`.
- * (document.hidden is no help behind a DAW: background throttling is off, so the page never reads as hidden.)
+ * `wants` says why frames are needed: `draw` (a visualizer is showing) or `record` (the waveform has gaps to fill).
+ * The YouTube stream additionally waits for `playing`, and streams for drawing only while the window is in front;
+ * for recording it streams regardless, since that is the point of using the app behind a DAW.
+ * (document.hidden is no help behind a DAW: background throttling is off, so the page never reads as hidden;
+ * the window's focus, reported by main, is what says nothing is looking.)
  */
 export function useAudioFeed(
   source: FeedSource,
   audioRef: RefObject<HTMLAudioElement | null>,
-  active: boolean,
+  wants: FeedWants,
   playing: boolean,
   sinkId: string
 ): AudioFeed {
+  const active = wants.draw || wants.record
+  const { draw, record } = wants
   const file = useRef<{ el: HTMLAudioElement; feed: AudioFeed; setSink(id: string): void; close(): void } | null>(null)
   const sinkRef = useRef(sinkId)
   useEffect(() => {
@@ -111,23 +124,35 @@ export function useAudioFeed(
     file.current?.setSink(sinkId)
   }, [sinkId, active, source])
 
+  // Read through a ref so a change of reason (drawing vs recording) re-syncs without restarting the stream below.
+  const wantsRef = useRef({ draw, record })
+  const streaming = source === 'yt' && active && playing
+  const syncAnalysis = useCallback((): void => {
+    const { draw: drawing, record: recording } = wantsRef.current
+    // Nothing is drawn while the window is not in front (the app often sits behind a DAW), so drawing alone doesn't stream then.
+    window.api.ytCommand({ cmd: 'analyse', value: recording || (drawing && isWindowActive()) ? 1 : 0 })
+  }, [])
+  useEffect(() => {
+    wantsRef.current = { draw, record }
+    if (streaming) syncAnalysis()
+  }, [draw, record, streaming, syncAnalysis])
+
   useEffect(() => {
     // Streaming costs the YouTube page, main and this window, so only while something is moving.
-    if (source !== 'yt' || !active || !playing) return
-    // Nothing is drawn while the window is hidden (the app often sits behind a DAW), so don't stream then.
-    const sync = (): void => window.api.ytCommand({ cmd: 'analyse', value: document.hidden ? 0 : 1 })
+    if (!streaming) return
+    const sync = syncAnalysis
     sync()
-    document.addEventListener('visibilitychange', sync)
+    const unsubscribe = subscribeWindowActive(sync)
     const off = window.api.onAudioFrame((frame) => {
       remote.current = { frame, at: performance.now() }
     })
     return () => {
-      document.removeEventListener('visibilitychange', sync)
+      unsubscribe()
       off()
       remote.current = null
       window.api.ytCommand({ cmd: 'analyse', value: 0 })
     }
-  }, [source, active, playing])
+  }, [streaming, syncAnalysis])
 
   return useMemo<AudioFeed>(() => {
     if (source === 'file') return { read: () => (file.current?.feed ?? SILENT).read() }

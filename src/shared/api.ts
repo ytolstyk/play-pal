@@ -55,6 +55,9 @@ export interface Api {
   onYtAdvanced(cb: (song: YtAdvanced) => void): () => void
   /** Spectrum/waveform frames of the YouTube Music track, while analysis is on (see the `analyse` command). */
   onAudioFrame(cb: (f: AudioFrame) => void): () => void
+  /** Whether the window is the one in front (focused, shown, not minimized); animations pause when it is not. */
+  getWindowActive(): Promise<boolean>
+  onWindowActive(cb: (active: boolean) => void): () => void
   /** A track's recorded waveform (see shared/waveform.ts); null if none was saved. */
   loadWaveform(trackId: string): Promise<Uint8Array | null>
   /** Stores a library track's waveform (beside the library file, not in it); resolves to whether it was kept. */

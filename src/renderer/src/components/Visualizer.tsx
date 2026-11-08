@@ -4,6 +4,7 @@ import { DEFAULT_THEME } from '../theme'
 import type { AudioFeed } from '../hooks/useAudioFeed'
 import { createDrawer, type Colors, type VizKind } from '../visualizers/draw'
 import { advance, createScene, isAtRest } from '../visualizers/scene'
+import { isWindowActive, subscribeWindowActive } from '../windowActivity'
 
 interface Props {
   feed: AudioFeed
@@ -14,6 +15,16 @@ interface Props {
 /** Longest step fed to the animation, so a stalled tab doesn't make everything jump on return. */
 const MAX_DT_S = 0.1
 const COLOR_REFRESH_MS = 500
+/**
+ * Pixel density the canvas is drawn at, however sharp the display. The motion is soft glow and fast strokes, so a
+ * 2x display loses nothing visible, while the fill work and the canvas's backing memory drop by almost half.
+ */
+const MAX_DPR = 1.5
+/**
+ * Frames closer than this are skipped: a 120 Hz display would otherwise double the drawing for motion nobody can tell apart.
+ * Well under 1000/60 so 60 Hz timestamp jitter never drops a frame, and over half of 1000/144 so a 144 Hz display still halves.
+ */
+const MIN_FRAME_MS = 12
 
 const readColors = (): Colors => {
   const style = getComputedStyle(document.documentElement)
@@ -24,8 +35,8 @@ const readColors = (): Colors => {
 }
 
 /**
- * Canvas that dances to the feed. The animation loop runs only while playing in a visible window,
- * plus the moments it takes to settle to silence afterwards.
+ * Canvas that dances to the feed. The animation loop runs only while playing in the window in front,
+ * plus the moments it takes to settle to silence afterwards. Behind a DAW it draws nothing at all.
  */
 export function Visualizer({ feed, kind, playing }: Props): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -47,7 +58,7 @@ export function Visualizer({ feed, kind, playing }: Props): React.JSX.Element {
     let warned = false
 
     const resize = (): void => {
-      const dpr = window.devicePixelRatio || 1
+      const dpr = Math.min(MAX_DPR, window.devicePixelRatio || 1)
       const r = canvas.getBoundingClientRect()
       const px = { w: Math.max(1, Math.round(r.width * dpr)), h: Math.max(1, Math.round(r.height * dpr)) }
       size = { w: r.width, h: r.height }
@@ -72,6 +83,10 @@ export function Visualizer({ feed, kind, playing }: Props): React.JSX.Element {
     }
 
     const loop = (now: number): void => {
+      if (last && now - last < MIN_FRAME_MS) {
+        raf = requestAnimationFrame(loop)
+        return
+      }
       const dt = last ? Math.min(MAX_DT_S, (now - last) / 1000) : 0
       last = now
       if (now - colorsAt > COLOR_REFRESH_MS) {
@@ -90,12 +105,12 @@ export function Visualizer({ feed, kind, playing }: Props): React.JSX.Element {
     }
 
     const start = (): void => {
-      if (raf || document.hidden) return
+      if (raf || !isWindowActive()) return
       last = 0
       raf = requestAnimationFrame(loop)
     }
-    const onVisibility = (): void => {
-      if (document.hidden) {
+    const onActivity = (): void => {
+      if (!isWindowActive()) {
         cancelAnimationFrame(raf)
         raf = 0
       } else start()
@@ -105,11 +120,11 @@ export function Visualizer({ feed, kind, playing }: Props): React.JSX.Element {
     const observer = new ResizeObserver(resize) // also fires once on observe, which does the first draw
     observer.observe(canvas)
     start()
-    document.addEventListener('visibilitychange', onVisibility)
+    const unsubscribe = subscribeWindowActive(onActivity)
     return () => {
       cancelAnimationFrame(raf)
       observer.disconnect()
-      document.removeEventListener('visibilitychange', onVisibility)
+      unsubscribe()
     }
   }, [feed, kind])
 

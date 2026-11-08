@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type RefObject } from 'react'
 import type { PlaybackState, Track } from '../../../shared/types'
 import { routeTo } from '../audioSink'
+import { isWindowActive, subscribeWindowActive } from '../windowActivity'
 
 const IDLE: PlaybackState = { t: 0, duration: 0, playing: false, rate: 1 }
 const UI_INTERVAL_MS = 50
 /** Main extrapolates between samples, so it only needs a periodic drift correction plus every state change. */
 const CLOCK_SEND_EVERY_MS = 250
+/** How often the cursor and time readout move while the window is not in front (every update when it is). */
+const UNFOCUSED_REDRAW_MS = 250
 /** Playing from within this of the start (or from a finished track) counts as starting the song over. */
 const START_WINDOW_S = 1
 const ENDED_EPSILON_S = 0.1
@@ -14,7 +17,11 @@ const AUDIO_EVENTS: string[] = ['play', 'pause', 'seeking', 'seeked', 'ratechang
 /** Everything but the position: changes rarely, so it can live in React state. */
 export type Transport = Omit<PlaybackState, 't'>
 
-/** The playback position as an external store, so only components that show it re-render at clock rate. */
+/**
+ * The playback position as an external store, so only components that show it re-render at clock rate.
+ * `subscribe` is a redraw signal for what is on screen: it slows to a few updates a second while the window is not in
+ * front (and fires at once on return). Logic that needs every update must read `get()` on its own timer, as the waveform recorder does.
+ */
 export interface Clock {
   subscribe(listener: () => void): () => void
   get(): number
@@ -75,6 +82,15 @@ export function usePlayback(track: Track, sinkId: string): Playback {
     []
   )
 
+  const lastNotifyAt = useRef(0)
+  const notify = useCallback((): void => {
+    const now = performance.now()
+    // Behind another window the cursor still creeps along, just not at the rate that costs a re-render every 50 ms.
+    if (!isWindowActive() && now - lastNotifyAt.current < UNFOCUSED_REDRAW_MS) return
+    lastNotifyAt.current = now
+    for (const l of listeners.current) l()
+  }, [])
+
   const apply = useCallback((s: PlaybackState) => {
     stateRef.current = s
     timeRef.current = s.t
@@ -84,8 +100,11 @@ export function usePlayback(track: Track, sinkId: string): Playback {
         ? prev
         : { duration: s.duration, playing: s.playing, rate: s.rate }
     )
-    for (const l of listeners.current) l()
-  }, [])
+    // The position is always kept current for logic; what is on screen is told by `notify`, which paces itself.
+    notify()
+  }, [notify])
+
+  useEffect(() => subscribeWindowActive(notify), [notify])
 
   useEffect(() => {
     if (isFile) return

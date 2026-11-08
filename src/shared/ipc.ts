@@ -16,6 +16,7 @@ export const IPC = {
   ytReturn: 'yt:return',
   ytAdvanced: 'player:yt-advanced',
   audioFrame: 'player:audio-frame',
+  windowActive: 'window:active',
   waveformLoad: 'waveform:load',
   waveformSave: 'waveform:save',
   midiTest: 'midi:test',

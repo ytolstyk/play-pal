@@ -96,6 +96,8 @@ function pushToWindow(channel: string, payload: unknown): void {
   // The window can be gone mid-quit; pushes must never throw.
   if (win && !win.isDestroyed()) win.webContents.send(channel, payload)
 }
+/** The window is in front and visible: the only time animations are worth drawing. */
+const windowActive = (): boolean => win !== null && !win.isDestroyed() && win.isFocused() && win.isVisible() && !win.isMinimized()
 const midiStatus = (): MidiStatus => ({ state: port.state(), name: port.name() })
 const pushMidiStatus = (): void => {
   if (port.state() === 'open') sender.retryOffs()
@@ -120,6 +122,14 @@ function createWindow(): void {
       backgroundThrottling: false
     }
   })
+  // Focus belongs to the window, not the page: clicking the YouTube Music view moves page focus but the window stays in front.
+  const pushActive = (): void => pushToWindow(IPC.windowActive, windowActive())
+  win.on('focus', pushActive)
+  win.on('blur', pushActive)
+  win.on('show', pushActive)
+  win.on('hide', pushActive)
+  win.on('minimize', pushActive)
+  win.on('restore', pushActive)
   win.on('closed', () => {
     win = null
     disarm()
@@ -366,6 +376,7 @@ async function loadLibrary(): Promise<LoadResult> {
 const knowsTrack = (id: unknown): id is string => isTrackId(id) && library.tracks.some((t) => t.id === id)
 
 function registerIpc(): void {
+  ipcMain.handle(IPC.windowActive, (e) => trusted(e) && windowActive())
   ipcMain.handle(IPC.libraryLoad, (e) => (trusted(e) ? loadLibrary() : { ...emptyLibrary(), warnings: [UNTRUSTED] }))
   ipcMain.handle(IPC.librarySave, (e, raw: unknown) =>
     trusted(e) ? saveInOrder(raw) : { ok: false, errors: [UNTRUSTED] }

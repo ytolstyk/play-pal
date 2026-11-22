@@ -25,7 +25,7 @@ import { clampInt } from '../shared/guards'
 import { AUDIO_FRAME_MS, readAudioFrame } from '../shared/audio'
 import { readClock, readRect, readYtCommand, readYtPageClock, type YtPageClock } from '../shared/payloads'
 import { isVideoId, originOf, YT_ORIGIN, ytFallbackTitle } from '../shared/url'
-import { isAutoAdvance } from '../shared/ytAdvance'
+import { isAutoAdvance, showsTrackAlive } from '../shared/ytAdvance'
 import {
   AUDIO_EXTENSIONS,
   MAX_LEAD_MS,
@@ -70,8 +70,8 @@ let ytDuration: number | null = null
 const YT_DURATION_DRIFT_S = 1
 /** How long after an auto-advance the page's now-playing title is awaited (it can lag the URL) before the song is offered. */
 const YT_OFFER_DELAY_MS = 1200
-/** When this track's own page last reported playing (a paused page keeps sending heartbeats), to tell an auto-advance from the user browsing elsewhere. Cleared once a leave is judged. */
-let lastYtPlayingAt: number | null = null
+/** When this track's own page last reported playing or sitting at its end (a page parked at its end keeps this fresh, a page paused mid-track does not), to tell an auto-advance from the user browsing elsewhere. Cleared once a leave is judged. */
+let lastYtAliveAt: number | null = null
 /** When a click or key last reached the page (any video, any document: a full page load resets the page's own memory of it). */
 let lastYtUserActiveAt: number | null = null
 /** An auto-advance was judged while the page's URL still named the track (its length changed first); the song is offered once the URL catches up. */
@@ -191,8 +191,8 @@ function onYtLeftTrack(clock: YtPageClock): void {
   if (advancedSong?.videoId === clock.videoId && clock.title) advancedSong.title = clock.title // the title can lag the URL
   // The old page keeps reporting until the reload commits; only the first sample of a leave is judged, because the
   // user's click activation expires while the song they chose is still playing.
-  const playedAt = lastYtPlayingAt
-  lastYtPlayingAt = null
+  const playedAt = lastYtAliveAt
+  lastYtAliveAt = null
   if (playedAt === null) {
     if (advancePending && offerable(clock)) offerAdvancedSong(clock)
     return
@@ -242,7 +242,8 @@ function onYtClock(e: IpcMainEvent, raw: unknown): void {
     }
   }
   const now = performance.now()
-  if (clock.playing) lastYtPlayingAt = now
+  // A page parked at its end keeps this fresh, so a late leave from it is judged by in-page activity alone.
+  if (showsTrackAlive(clock)) lastYtAliveAt = now
   const age = Math.min(MAX_SAMPLE_AGE_MS, Math.max(0, Date.now() - clock.sentAt))
   const state = { t: clock.t, duration: clock.duration, playing: clock.playing, rate: clock.rate }
   runner.sample({ trackId: armed.id, ...state }, now - age)
@@ -276,7 +277,7 @@ function setKeepAwake(on: boolean): void {
 function disarm(): void {
   armed = null
   ytDuration = null
-  lastYtPlayingAt = null
+  lastYtAliveAt = null
   lastYtUserActiveAt = null
   advancePending = false
   advancedSong = null
@@ -301,7 +302,7 @@ function armTrack(raw: unknown): void {
   }
   runner.select(track.id, track.cues, track.start ?? null)
   ytDuration = null
-  lastYtPlayingAt = null
+  lastYtAliveAt = null
   lastYtUserActiveAt = null
   advancePending = false
   advancedSong = null

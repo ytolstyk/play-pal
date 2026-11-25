@@ -1,16 +1,20 @@
 import { DEFAULT_CUE_ACTION, START_PRESET_LABEL } from '../../../shared/cues'
 import { clampInt } from '../../../shared/guards'
+import { presetFields, startPresetSourceId, type CuePreset } from '../../../shared/presets'
 import { DEFAULT_START_WAIT_MS, MAX_LABEL, MAX_START_WAIT_MS, type StartPreset } from '../../../shared/types'
 import { ActionFields } from './ActionFields'
 import { ColorSwatches } from './ColorSwatches'
+import { PresetPicker } from './PresetPicker'
 
 interface Props {
+  trackId: string
+  presets: readonly CuePreset[]
   start: StartPreset | undefined
   onChange(start: StartPreset | undefined): void
 }
 
 /** Optional per-track preset that is sent, then waited out, before playback starts from the beginning. */
-export function StartPresetEditor({ start, onChange }: Props): React.JSX.Element {
+export function StartPresetEditor({ trackId, presets, start, onChange }: Props): React.JSX.Element {
   return (
     <div className="start-preset">
       <label>
@@ -32,6 +36,11 @@ export function StartPresetEditor({ start, onChange }: Props): React.JSX.Element
             maxLength={MAX_LABEL}
             aria-label="Start preset name"
             onChange={(e) => onChange({ ...start, label: e.target.value || undefined })}
+          />
+          <PresetPicker
+            presets={presets}
+            sourceId={startPresetSourceId(trackId)}
+            onPick={(_, p) => onChange({ ...start, ...presetFields(p) })}
           />
           <ColorSwatches color={start.color} onChange={(color) => onChange({ ...start, color })} />
           <ActionFields action={start.action} onChange={(action) => onChange({ ...start, action })} />

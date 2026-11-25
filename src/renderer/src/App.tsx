@@ -10,6 +10,7 @@ import { useLibrary, type LibraryApi } from './hooks/useLibrary'
 import { useAudioOutput } from './hooks/useAudioOutput'
 import { useLimiter } from './hooks/useLimiter'
 import { useMidiStatus } from './hooks/useMidiStatus'
+import { usePresets } from './hooks/usePresets'
 import { useTheme } from './hooks/useTheme'
 
 export function App(): React.JSX.Element {
@@ -33,6 +34,7 @@ export function App(): React.JSX.Element {
   )
 
   const track = library?.tracks.find((t) => t.id === selectedId) ?? null
+  const presets = usePresets(library?.tracks)
 
   // Cues fire from what's on screen, whether or not it has been saved yet.
   useEffect(() => {
@@ -96,7 +98,7 @@ export function App(): React.JSX.Element {
             </div>
           )}
           {track ? (
-            <Player key={track.id} track={track} suspendVideo={settingsOpen} sinkId={output.sinkId} onChange={changeTrack} />
+            <Player key={track.id} track={track} presets={presets} suspendVideo={settingsOpen} sinkId={output.sinkId} onChange={changeTrack} />
           ) : (
             <p className="muted empty">Add a local file or paste a YouTube Music link to get started.</p>
           )}

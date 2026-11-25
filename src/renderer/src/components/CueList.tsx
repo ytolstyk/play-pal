@@ -1,13 +1,16 @@
-import { memo, type CSSProperties } from 'react'
+import { memo, useCallback, type CSSProperties } from 'react'
 import type { Cue } from '../../../shared/types'
+import { presetFields, type CuePreset } from '../../../shared/presets'
 import { sortedByTime } from '../../../shared/cues'
 import { formatTime, parseTime } from '../../../shared/time'
 import { MAX_LABEL } from '../../../shared/types'
 import { ActionFields } from './ActionFields'
 import { ColorSwatches } from './ColorSwatches'
+import { PresetPicker } from './PresetPicker'
 
 interface Props {
   cues: Cue[]
+  presets: readonly CuePreset[]
   firedId: string | null
   onChange(id: string, change: Partial<Cue>): void
   onDelete(id: string): void
@@ -32,7 +35,11 @@ function TimeInput({ time, onCommit }: { time: number; onCommit(t: number): void
   )
 }
 
-function CueListImpl({ cues, firedId, onChange, onDelete, onSeek }: Props): React.JSX.Element {
+function CueListImpl({ cues, presets, firedId, onChange, onDelete, onSeek }: Props): React.JSX.Element {
+  const pickPreset = useCallback(
+    (id: string, p: CuePreset) => onChange(id, presetFields(p)),
+    [onChange]
+  )
   if (cues.length === 0) {
     return <p className="muted empty">No cues yet. Press M (or “Add cue here”) while the track plays.</p>
   }
@@ -58,6 +65,7 @@ function CueListImpl({ cues, firedId, onChange, onDelete, onSeek }: Props): Reac
             aria-label="Cue label"
             onChange={(e) => onChange(c.id, { label: e.target.value })}
           />
+          <PresetPicker presets={presets} sourceId={c.id} onPick={pickPreset} />
           <ColorSwatches color={c.color} onChange={(color) => onChange(c.id, { color })} />
           <ActionFields action={c.action} onChange={(action) => onChange(c.id, { action })} />
           <button className="ghost small" aria-label="Delete cue" onClick={() => onDelete(c.id)}>

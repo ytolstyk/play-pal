@@ -1,4 +1,4 @@
-import type { Cue } from './types'
+import type { Cue, MidiAction } from './types'
 
 export const sortedByTime = (cues: readonly Cue[]): Cue[] => [...cues].sort((a, b) => a.time - b.time)
 
@@ -23,6 +23,14 @@ export const isCueColor = (v: unknown): v is string => typeof v === 'string' && 
 
 /** Cue defaults for the first cue of a track. */
 export const DEFAULT_CUE_ACTION = { type: 'cc', channel: 1, number: 20, value: 127 } as const
+
+/** Name given to a cue added with "Add cue here"; `isAutoCueLabel` recognises it, so the two must change together. */
+export const autoCueLabel = (n: number): string => `Cue ${n}`
+const AUTO_CUE_LABEL = /^Cue \d+$/
+export const isAutoCueLabel = (label: string): boolean => AUTO_CUE_LABEL.test(label)
+
+export const sameAction = (a: MidiAction, b: MidiAction): boolean =>
+  a.type === b.type && a.channel === b.channel && a.number === b.number && a.value === b.value
 
 /** Id and default name of the pseudo-cue that stands for a track's start preset. */
 export const START_CUE_ID = 'start-preset'

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Cue, Track } from '../../../shared/types'
-import { DEFAULT_CUE_ACTION, sortedByTime } from '../../../shared/cues'
+import type { CuePreset } from '../../../shared/presets'
+import { autoCueLabel, DEFAULT_CUE_ACTION, sortedByTime } from '../../../shared/cues'
 import { formatTime, roundMs } from '../../../shared/time'
 import { DEFAULT_VOLUME, MAX_TITLE } from '../../../shared/types'
 import { useAudioFeed } from '../hooks/useAudioFeed'
@@ -22,6 +23,8 @@ import { StartPresetEditor } from './StartPresetEditor'
 
 interface Props {
   track: Track
+  /** Named segments from the whole library, offered when editing a cue. */
+  presets: readonly CuePreset[]
   /**
    * True while a modal overlay (settings) is open. The YouTube view is a native layer above the
    * page, so it is hidden (setYtBounds(null)) and the play/cue hotkeys are ignored meanwhile.
@@ -62,7 +65,7 @@ const ARROW_KEYS = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']
 const ownsArrowKeys = (t: EventTarget | null): boolean =>
   t instanceof HTMLElement && ((t instanceof HTMLInputElement && t.type === 'range') || t.getAttribute('role') === 'separator')
 
-export function Player({ track, suspendVideo, sinkId, onChange }: Props): React.JSX.Element {
+export function Player({ track, presets, suspendVideo, sinkId, onChange }: Props): React.JSX.Element {
   const { state, clock, timeRef, audioRef, starting, toggle, restart, seek, setRate, setVolume } = usePlayback(track, sinkId)
   const { pending, skip, cancel: cancelSkip } = useSkip(seek, timeRef, state.duration, track.id)
   // A direct seek (scrub, cue click) supersedes a skip still waiting out its debounce.
@@ -187,7 +190,7 @@ export function Player({ track, suspendVideo, sinkId, onChange }: Props): React.
       const cue: Cue = {
         id: crypto.randomUUID(),
         time: roundMs(timeRef.current),
-        label: `Cue ${t.cues.length + 1}`,
+        label: autoCueLabel(t.cues.length + 1),
         action: previous?.action ?? DEFAULT_CUE_ACTION
       }
       return { ...t, cues: [...t.cues, cue] }
@@ -377,8 +380,8 @@ export function Player({ track, suspendVideo, sinkId, onChange }: Props): React.
         onMoveCue={moveCue}
       />
       <Wire variant="c" />
-      <StartPresetEditor start={track.start} onChange={(start) => onChange((t) => ({ ...t, start }))} />
-      <CueList cues={track.cues} firedId={firedId} onChange={changeCue} onDelete={deleteCue} onSeek={seekTo} />
+      <StartPresetEditor trackId={track.id} presets={presets} start={track.start} onChange={(start) => onChange((t) => ({ ...t, start }))} />
+      <CueList cues={track.cues} presets={presets} firedId={firedId} onChange={changeCue} onDelete={deleteCue} onSeek={seekTo} />
     </section>
   )
 }

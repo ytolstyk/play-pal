@@ -16,6 +16,7 @@ import { pathToFileURL } from 'node:url'
 import { ActionSender } from './actionSender'
 import { CueRunner } from './cueRunner'
 import { VirtualPort } from './midi'
+import { readNeuralMaps } from './neuralMaps'
 import { BackupStore, readLibraryFile } from './backups'
 import { LibraryStore } from './store'
 import { WaveformStore } from './waveformStore'
@@ -91,6 +92,8 @@ const yt = new YtPlayer(() => win)
 app.setPath('userData', join(app.getPath('appData'), 'play-pal'))
 const store = new LibraryStore(join(app.getPath('userData'), 'library.json'), new BackupStore(join(app.getPath('userData'), 'backups')))
 const waveforms = new WaveformStore(join(app.getPath('userData'), 'waveforms'))
+/** Where the Neural DSP plugins keep their settings and MIDI maps (read-only here). */
+const NEURAL_DSP_DIR = join(app.getPath('appData'), 'Neural DSP')
 
 function pushToWindow(channel: string, payload: unknown): void {
   // The window can be gone mid-quit; pushes must never throw.
@@ -433,6 +436,7 @@ function registerIpc(): void {
     if (trusted(e) && validateAction(raw).length === 0) sender.send(raw as MidiAction)
   })
   ipcMain.handle(IPC.midiStatus, (e) => (trusted(e) ? midiStatus() : null))
+  ipcMain.handle(IPC.midiMaps, (e) => (trusted(e) ? readNeuralMaps(NEURAL_DSP_DIR) : []))
   ipcMain.handle(IPC.midiReconnect, async (e) => {
     if (trusted(e)) await port.reconnect()
   })

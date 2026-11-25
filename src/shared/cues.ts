@@ -32,6 +32,9 @@ export const isAutoCueLabel = (label: string): boolean => AUTO_CUE_LABEL.test(la
 export const sameAction = (a: MidiAction, b: MidiAction): boolean =>
   a.type === b.type && a.channel === b.channel && a.number === b.number && a.value === b.value
 
+/** A string that is equal for equal actions (for keys and de-duplication). */
+export const actionKey = (a: MidiAction): string => `${a.type}${a.channel}.${a.number}.${a.value}`
+
 /** Id and default name of the pseudo-cue that stands for a track's start preset. */
 export const START_CUE_ID = 'start-preset'
 export const START_PRESET_LABEL = 'Start preset'

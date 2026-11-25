@@ -1,6 +1,30 @@
 import { memo, useMemo, useState } from 'react'
 import { describePreset, presetsFor, type CuePreset } from '../../../shared/presets'
 
+const OWN_HEADING = 'Saved segments'
+
+const optionOf = (p: CuePreset): React.JSX.Element => (
+  <option key={p.id} value={p.id}>
+    {describePreset(p)}
+  </option>
+)
+
+/** The user's segments, then one heading per Neural DSP plugin; no headings while there are only the user's segments. */
+function groupedOptions(presets: readonly CuePreset[]): React.JSX.Element[] | React.JSX.Element {
+  const groups = new Map<string, CuePreset[]>()
+  for (const p of presets) {
+    const members = groups.get(p.group ?? '')
+    if (members) members.push(p)
+    else groups.set(p.group ?? '', [p])
+  }
+  if (groups.size === 1 && groups.has('')) return <>{presets.map(optionOf)}</>
+  return [...groups].map(([group, members]) => (
+    <optgroup key={group} label={group ? `${group} MIDI map` : OWN_HEADING}>
+      {members.map(optionOf)}
+    </optgroup>
+  ))
+}
+
 /** Options appear only on an explicit open, so a stray letter on a focused menu cannot pick one. */
 const OPEN_KEYS = ['Enter', ' ', 'ArrowDown', 'ArrowUp']
 
@@ -19,12 +43,13 @@ interface Props {
 function PresetPickerImpl({ presets, sourceId, onPick }: Props): React.JSX.Element | null {
   const [active, setActive] = useState(false)
   const available = useMemo(() => presetsFor(presets, sourceId), [presets, sourceId])
+  const menu = useMemo(() => (active ? groupedOptions(available) : null), [active, available])
   if (available.length === 0) return null
   return (
     <select
       className="preset-picker"
       value=""
-      aria-label="Apply a saved preset"
+      aria-label="Apply a preset"
       onMouseDown={() => setActive(true)}
       onKeyDown={(e) => OPEN_KEYS.includes(e.key) && setActive(true)}
       onBlur={() => setActive(false)}
@@ -36,12 +61,7 @@ function PresetPickerImpl({ presets, sourceId, onPick }: Props): React.JSX.Eleme
       <option value="" disabled>
         Preset…
       </option>
-      {active &&
-        available.map((p) => (
-          <option key={p.id} value={p.id}>
-            {describePreset(p)}
-          </option>
-        ))}
+      {active && menu}
     </select>
   )
 }

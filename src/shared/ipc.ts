@@ -21,7 +21,8 @@ export const IPC = {
   waveformSave: 'waveform:save',
   midiTest: 'midi:test',
   midiStatus: 'midi:status',
-  midiReconnect: 'midi:reconnect'
+  midiReconnect: 'midi:reconnect',
+  midiMaps: 'midi:maps'
 } as const
 
 /**

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { autoCueLabel, isAutoCueLabel } from '../src/shared/cues'
-import { collectPresets, describePreset, presetFields, presetsFor, samePresets, startPresetSourceId } from '../src/shared/presets'
+import { collectPresets, describePreset, presetFields, presetsFor, samePresets, startPresetSourceId, withMapPresets } from '../src/shared/presets'
 import type { Cue, MidiAction, Track } from '../src/shared/types'
 
 const cc = (number: number, channel = 1): MidiAction => ({ type: 'cc', channel, number, value: 127 })
@@ -88,5 +88,51 @@ describe('samePresets', () => {
     expect(samePresets(make('Lead'), make('Lead', 21))).toBe(false)
     expect(samePresets(make('Lead'), make('Lead', 20, '2'))).toBe(false)
     expect(samePresets(make('Lead'), [])).toBe(false)
+  })
+})
+
+describe('withMapPresets', () => {
+  const map = { plugin: 'Archetype X', label: 'Preset CC 21', action: { type: 'cc', channel: 1, number: 21, value: 127 } } as const
+
+  it('lists map entries after the user segments, under the plugin heading', () => {
+    const own = collectPresets([track('a', [cue('1', 'Solo', cc(30))])])
+    const all = withMapPresets(own, [map])
+    expect(all.map((p) => p.label)).toEqual(['Solo', 'Preset CC 21'])
+    expect(all[1].group).toBe('Archetype X')
+    expect(all[1].sourceIds).toEqual([])
+  })
+
+  it('does not list a cue that only repeats a map entry', () => {
+    const own = collectPresets([track('a', [cue('1', 'Preset CC 21', cc(21, 1) )])])
+    expect(withMapPresets(own, [{ ...map, action: { ...map.action, value: 127 } }]).filter((p) => p.label === 'Preset CC 21')).toHaveLength(1)
+  })
+
+  it('keeps a map entry out of the menu of a cue that already carries it', () => {
+    const own = collectPresets([track('a', [cue('1', 'Preset CC 21', cc(21)), cue('2', 'Solo', cc(30))])])
+    const all = withMapPresets(own, [map])
+    expect(presetsFor(all, '1').map((p) => p.label)).toEqual(['Solo'])
+    expect(presetsFor(all, '2').map((p) => p.label)).toEqual(['Preset CC 21'])
+  })
+
+  it('treats a coloured cue carrying a map message as carrying that entry, with no second row', () => {
+    const own = collectPresets([
+      track('a', [cue('1', 'Preset CC 21', cc(21), '#ff7a6b'), cue('2', 'Preset CC 21', cc(21), '#4fb6ff'), cue('3', 'Preset CC 21', cc(21))])
+    ])
+    const all = withMapPresets(own, [map])
+    expect(all.filter((p) => p.group === undefined && !p.color)).toHaveLength(0) // the colourless duplicate folds into the map entry
+    for (const id of ['1', '2', '3']) expect(presetsFor(all, id).filter((p) => p.group === 'Archetype X')).toHaveLength(0)
+    expect(presetsFor(all, '9').filter((p) => p.group === 'Archetype X')).toHaveLength(1)
+  })
+
+  it('leaves a cue its colour when a map entry is picked, but a segment brings its own', () => {
+    const [fromMap] = withMapPresets([], [map])
+    expect('color' in presetFields(fromMap)).toBe(false)
+    const [segment] = collectPresets([track('a', [cue('1', 'Lead', cc(20), '#ff7a6b')])])
+    expect(presetFields(segment).color).toBe('#ff7a6b')
+  })
+
+  it('returns the same array when there are no maps', () => {
+    const own = collectPresets([track('a', [cue('1', 'Solo')])])
+    expect(withMapPresets(own, [])).toBe(own)
   })
 })

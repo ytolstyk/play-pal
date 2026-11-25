@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Track } from '../../shared/types'
+import { withMapPresets } from '../../shared/presets'
 import { Bus, CircuitBackdrop } from './components/Circuit'
 import { Player } from './components/Player'
 import { SettingsPanel } from './components/SettingsPanel'
@@ -9,6 +10,7 @@ import { useAdvancedOffer } from './hooks/useAdvancedOffer'
 import { useLibrary, type LibraryApi } from './hooks/useLibrary'
 import { useAudioOutput } from './hooks/useAudioOutput'
 import { useLimiter } from './hooks/useLimiter'
+import { useMapPresets } from './hooks/useMapPresets'
 import { useMidiStatus } from './hooks/useMidiStatus'
 import { usePresets } from './hooks/usePresets'
 import { useTheme } from './hooks/useTheme'
@@ -34,7 +36,9 @@ export function App(): React.JSX.Element {
   )
 
   const track = library?.tracks.find((t) => t.id === selectedId) ?? null
-  const presets = usePresets(library?.tracks)
+  const ownPresets = usePresets(library?.tracks)
+  const mapPresets = useMapPresets()
+  const presets = useMemo(() => withMapPresets(ownPresets, mapPresets), [ownPresets, mapPresets])
 
   // Cues fire from what's on screen, whether or not it has been saved yet.
   useEffect(() => {

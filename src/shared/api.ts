@@ -1,4 +1,5 @@
 import type { AudioFrame } from './audio'
+import type { MapPreset } from './neuralMap'
 import type {
   ClockSample,
   Track,
@@ -66,4 +67,6 @@ export interface Api {
   getMidiStatus(): Promise<MidiStatus>
   onMidiStatus(cb: (s: MidiStatus) => void): () => void
   reconnect(): Promise<void>
+  /** The CC messages Neural DSP plugins listen to, read from their MIDI map files (empty if none are installed). */
+  listMidiMaps(): Promise<MapPreset[]>
 }

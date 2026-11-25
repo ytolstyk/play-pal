@@ -1,4 +1,5 @@
-import { CUE_COLORS, isAutoCueLabel, sameAction } from './cues'
+import { actionKey, CUE_COLORS, isAutoCueLabel, sameAction } from './cues'
+import type { MapPreset } from './neuralMap'
 import type { Cue, MidiAction, Track } from './types'
 
 /** A named segment (label, colour, MIDI action) that other cues can copy. Derived from the library, never stored. */
@@ -7,6 +8,8 @@ export interface CuePreset extends Pick<Cue, 'label' | 'color' | 'action'> {
   id: string
   /** Cues (or `startPresetSourceId`s) that carry exactly this preset. */
   sourceIds: string[]
+  /** Menu heading: the Neural DSP plugin whose MIDI map lists this message. Absent for the user's own segments. */
+  group?: string
 }
 
 /** Start presets are not cues, so they get an id of their own (one per track). */
@@ -15,8 +18,8 @@ export const startPresetSourceId = (trackId: string): string => `start:${trackId
 const collator = new Intl.Collator()
 
 // \u0000 cannot occur in a label, so two different segments never share an id.
-const presetId = (label: string, color: string | undefined, a: MidiAction): string =>
-  `${label}\u0000${color ?? ''}\u0000${a.type}${a.channel}.${a.number}.${a.value}`
+export const presetId = (label: string, color: string | undefined, a: MidiAction): string =>
+  `${label}\u0000${color ?? ''}\u0000${actionKey(a)}`
 
 /**
  * Every named cue and start preset in the library as a preset, identical ones merged, sorted by name.
@@ -54,14 +57,46 @@ export const samePresets = (a: readonly CuePreset[], b: readonly CuePreset[]): b
       sameStrings(p.sourceIds, b[i].sourceIds)
   )
 
+/**
+ * The user's segments followed by the messages Neural DSP plugins listen to. A segment that only repeats
+ * a map entry (a cue still named like it) is left out, so the same message is not listed twice.
+ */
+export function withMapPresets(own: readonly CuePreset[], maps: readonly MapPreset[]): readonly CuePreset[] {
+  if (maps.length === 0) return own
+  // A map entry has no colour, but a cue that carries its message may have been given one: match on label and message only.
+  const carriers = new Map<string, string[]>()
+  for (const p of own) {
+    const key = presetId(p.label, undefined, p.action)
+    carriers.set(key, [...(carriers.get(key) ?? []), ...p.sourceIds])
+  }
+  const mapped = new Set<string>()
+  const fromMaps = maps.map((m): CuePreset => {
+    const key = presetId(m.label, undefined, m.action)
+    mapped.add(key)
+    return {
+      id: `map:${m.plugin}\u0000${key}`,
+      label: m.label,
+      action: { ...m.action },
+      // Cues already carrying this message keep it out of their own menu, as with any other preset.
+      sourceIds: [...(carriers.get(key) ?? [])],
+      group: m.plugin
+    }
+  })
+  // Only the colourless duplicate is redundant; a coloured variant is a different segment.
+  return [...own.filter((p) => !mapped.has(p.id)), ...fromMaps]
+}
+
 /** The presets a cue can pick: not one it already carries (picking it would change nothing). */
 export const presetsFor = (presets: readonly CuePreset[], sourceId: string): CuePreset[] =>
   presets.filter((p) => !p.sourceIds.includes(sourceId))
 
-/** What picking a preset writes into a cue or start preset (the action is copied, never shared). */
+/**
+ * What picking a preset writes into a cue or start preset (the action is copied, never shared).
+ * A segment brings its colour along; a map entry has none, so the cue keeps the colour it has.
+ */
 export const presetFields = (p: CuePreset): Pick<Cue, 'label' | 'color' | 'action'> => ({
   label: p.label,
-  color: p.color,
+  ...(p.group === undefined && { color: p.color }),
   action: { ...p.action }
 })
 

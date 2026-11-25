@@ -38,7 +38,8 @@ const api: Api = {
   testAction: (action) => ipcRenderer.invoke(IPC.midiTest, action),
   getMidiStatus: () => ipcRenderer.invoke(IPC.midiStatus),
   onMidiStatus: subscribe<MidiStatus>(IPC.midiStatus),
-  reconnect: () => ipcRenderer.invoke(IPC.midiReconnect)
+  reconnect: () => ipcRenderer.invoke(IPC.midiReconnect),
+  listMidiMaps: () => ipcRenderer.invoke(IPC.midiMaps)
 }
 
 contextBridge.exposeInMainWorld('api', api)

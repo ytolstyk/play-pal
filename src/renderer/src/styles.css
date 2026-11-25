@@ -110,7 +110,8 @@ main { position: relative; overflow-y: auto; min-width: 0; }
 .handle.dragging::after { transform: translateY(2px); }
 .overview { position: relative; height: 34px; margin: 6px 1px 0; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; cursor: pointer; touch-action: none; user-select: none; overflow: hidden; }
 .overview-window { position: absolute; top: 0; bottom: 0; background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 4px; cursor: grab; pointer-events: none; }
-.overview-playhead { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--accent-2); pointer-events: none; }
+.overview-cue, .overview-playhead { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--accent-2); pointer-events: none; }
+.overview-cue { background: var(--cue, var(--muted)); }
 .timeline-tools { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 8px; }
 .tool-group { display: flex; align-items: center; gap: 6px; }
 .zoom-readout { min-width: 44px; text-align: center; }

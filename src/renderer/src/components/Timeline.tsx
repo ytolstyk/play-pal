@@ -1,4 +1,4 @@
-import { memo, type CSSProperties, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { PendingSkip } from '../hooks/useSkip'
 import { useCueDrag, type CueDrag } from '../hooks/useCueDrag'
 import { useScrub } from '../hooks/useScrub'
@@ -6,6 +6,7 @@ import { useTimelineGestures } from '../hooks/useTimelineGestures'
 import { useTimelineView } from '../hooks/useTimelineView'
 import { useClockTime, type Clock } from '../hooks/usePlayback'
 import type { Waveform } from '../hooks/useWaveform'
+import { cueStyle } from '../cueStyle'
 import { fractionOf } from '../timelineView'
 import { START_CUE_ID, sortedByTime } from '../../../shared/cues'
 import { clamp } from '../../../shared/guards'
@@ -49,9 +50,6 @@ function activeMarker(drag: CueDrag | null, scrubT: number | null, pendingSkip: 
   if (pendingSkip) return { at: pendingSkip.target, label: skipLabel(pendingSkip) }
   return null
 }
-
-// The cast is safe: `--cue` is a custom property, which CSSProperties just doesn't know about.
-const cueStyle = (color: string | undefined, left: string): CSSProperties => ({ left, ...(color ? ({ '--cue': color } as CSSProperties) : {}) })
 
 /**
  * Waveform seek bar. Press-drag-release on the waveform seeks. Cues are moved by their handles
@@ -170,7 +168,7 @@ export const Timeline = memo(function Timeline({
           ))}
         </div>
       </div>
-      {zoomed && <TimelineOverview bins={bins} revision={revision} duration={duration} view={view.view} t={playhead} onPan={view.scrollTo} />}
+      {zoomed && <TimelineOverview bins={bins} revision={revision} duration={duration} cues={shown} view={view.view} t={playhead} onPan={view.scrollTo} />}
       <TimelineToolbar
         view={view.view}
         duration={duration}

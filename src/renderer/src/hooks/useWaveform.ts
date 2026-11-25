@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { bandLevels, binCount, binTotalOf, SAVED_LENGTH_TOLERANCE_BINS, WAVE_BANDS, WAVE_BINS_PER_SECOND, WaveRecorder } from '../../../shared/waveform'
+import { bandLevels, binCount, binTotalOf, fitsTrack, WAVE_BANDS, WAVE_BINS_PER_SECOND, WaveRecorder } from '../../../shared/waveform'
 import { ClockTracker } from '../clockTracker'
 import type { AudioFeed } from './useAudioFeed'
 import type { Clock } from './usePlayback'
@@ -15,6 +15,21 @@ const WARMUP_MS = 150
 const LOOKAHEAD_S = 1.5
 /** Too quiet to tell how loud the track is once the volume is divided out. */
 const MIN_VOLUME = 0.05
+
+/**
+ * Saves still being written, by track. Leaving a track saves it, and coming straight back reads the file: without waiting
+ * for the write the read returns the previous version and the stretch recorded last is lost.
+ */
+const savesInFlight = new Map<string, Promise<unknown>>()
+const afterPendingSave = (trackId: string): Promise<unknown> => savesInFlight.get(trackId) ?? Promise.resolve()
+/** Runs `write` once the track's earlier saves are done. */
+function queueSave(trackId: string, write: () => Promise<unknown>): void {
+  const save = afterPendingSave(trackId).then(write).catch(() => undefined)
+  savesInFlight.set(trackId, save)
+  void save.then(() => {
+    if (savesInFlight.get(trackId) === save) savesInFlight.delete(trackId)
+  })
+}
 
 export interface Waveform {
   recorder: WaveRecorder | null
@@ -47,15 +62,14 @@ export function useWaveform(trackId: string, duration: number, playing: boolean)
   const dirty = useRef(false)
   const stale = useRef(false)
   const redrawTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  const saving = useRef<Promise<unknown>>(Promise.resolve())
   const lastShown = useRef<Uint8Array | null>(null)
 
   useEffect(() => {
     setSaved(undefined)
     lastShown.current = null // another track's waveform is no backdrop
     let cancelled = false
-    void window.api
-      .loadWaveform(trackId)
+    void afterPendingSave(trackId)
+      .then(() => window.api.loadWaveform(trackId))
       .catch(() => null)
       .then((bins) => {
         if (!cancelled) setSaved(bins)
@@ -71,7 +85,7 @@ export function useWaveform(trackId: string, duration: number, playing: boolean)
   // recording still fits (the recorder's own tolerance) keeps the recorder as it is, so nothing recorded is thrown away
   // by a rebuild; a different length is a different track body and starts over.
   const realBinTotal = duration > 0 ? binCount(duration) : 0
-  const keepSaved = savedBinTotal > 0 && (realBinTotal === 0 || Math.abs(realBinTotal - savedBinTotal) <= SAVED_LENGTH_TOLERANCE_BINS)
+  const keepSaved = savedBinTotal > 0 && (realBinTotal === 0 || fitsTrack(savedBinTotal, realBinTotal))
   const binTotal = keepSaved ? savedBinTotal : realBinTotal
   // What was last drawn stays on screen under a rebuilt recorder (a length that no longer fits) until playback overwrites it.
   // Written after each commit and read when the next recorder is built; cleared when the track changes.
@@ -88,8 +102,9 @@ export function useWaveform(trackId: string, duration: number, playing: boolean)
   const shownDuration = duration > 0 ? duration : savedDuration
 
   useEffect(() => {
+    recorder?.limitTo(realBinTotal > 0 ? realBinTotal : Infinity)
     setWantsFrames(recorder !== null && !recorder.complete)
-  }, [recorder])
+  }, [recorder, realBinTotal])
 
   const subscribe = useCallback((listener: () => void) => {
     listeners.current.add(listener)
@@ -133,7 +148,7 @@ export function useWaveform(trackId: string, duration: number, playing: boolean)
       if (!dirty.current) return
       dirty.current = false
       // One write at a time, so an older snapshot can't land after a newer one.
-      saving.current = saving.current.then(() =>
+      queueSave(trackId, () =>
         window.api
           .saveWaveform(trackId, recorder.bins)
           .catch(() => false)

@@ -6,6 +6,7 @@ import {
   binCount,
   decodeWaveFile,
   encodeWaveFile,
+  fitsTrack,
   isWaveBins,
   levelOf,
   MAX_WAVE_BYTES,
@@ -85,18 +86,22 @@ describe('WaveRecorder', () => {
     expect(levelOf(r.bins[2 * BPS])).toBeCloseTo(0.8, 1)
   })
 
-  it('shows an earlier waveform, stretched to the new length, until playback overwrites it', () => {
+  it('shows an earlier waveform at its own times, cut or padded to the new length, until playback overwrites it', () => {
     const old = new WaveRecorder(10)
     for (let t = 0; t < 10; t += 1 / BPS) old.recordLevels(t, flat(0.5))
-    const rebuilt = new WaveRecorder(20, null, undefined, old.shown)
-    expect(rebuilt.coverage).toBe(0)
-    expect(rebuilt.bins.every((b) => b === 0)).toBe(true)
-    expect(levelOf(rebuilt.shown[0])).toBeCloseTo(0.5, 1)
-    expect(levelOf(rebuilt.shown[19 * BPS])).toBeCloseTo(0.5, 1)
-    rebuilt.recordLevels(5, flat(1))
-    expect(levelOf(rebuilt.shown[5 * BPS])).toBeCloseTo(1, 1)
-    expect(levelOf(rebuilt.shown[6 * BPS])).toBeCloseTo(0.5, 1)
-    expect(rebuilt.bins[6 * BPS]).toBe(0)
+    const longer = new WaveRecorder(20, null, undefined, old.shown)
+    expect(longer.coverage).toBe(0)
+    expect(longer.bins.every((b) => b === 0)).toBe(true)
+    expect(levelOf(longer.shown[0])).toBeCloseTo(0.5, 1)
+    expect(levelOf(longer.shown[9 * BPS])).toBeCloseTo(0.5, 1)
+    expect(longer.shown[11 * BPS]).toBe(0) // after the old one's end: empty, not stretched
+    longer.recordLevels(5, flat(1))
+    expect(levelOf(longer.shown[5 * BPS])).toBeCloseTo(1, 1)
+    expect(levelOf(longer.shown[6 * BPS])).toBeCloseTo(0.5, 1)
+    expect(longer.bins[6 * BPS]).toBe(0)
+    const shorter = new WaveRecorder(4, null, undefined, old.shown)
+    expect(shorter.shown.length).toBe(4 * BPS * WAVE_BANDS)
+    expect(levelOf(shorter.shown[3 * BPS])).toBeCloseTo(0.5, 1)
   })
 
   it('draws a saved recording over the backdrop and the backdrop where nothing was recorded', () => {
@@ -162,6 +167,24 @@ describe('WaveRecorder', () => {
     const other = new WaveRecorder(30)
     other.recordLevels(1, flat(0.5))
     expect(new WaveRecorder(10, other.bins).coverage).toBe(0)
+  })
+
+  it('keeps a saved recording up to a second off the track length and drops one further off', () => {
+    expect(fitsTrack(100, 100 + BPS)).toBe(true)
+    expect(fitsTrack(100 + BPS, 100)).toBe(true)
+    expect(fitsTrack(100, 101 + BPS)).toBe(false)
+    const saved = new WaveRecorder(10)
+    saved.recordLevels(1, flat(0.5))
+    expect(new WaveRecorder(10.5, saved.bins).coverage).toBeGreaterThan(0)
+    expect(new WaveRecorder(12, saved.bins).coverage).toBe(0)
+  })
+
+  it('reaches complete when a kept recording is longer than the track', () => {
+    const r = new WaveRecorder(10)
+    r.limitTo(8 * BPS)
+    for (let i = 0; i < 8 * BPS; i++) r.recordLevels(i / BPS, flat(0.5))
+    expect(r.complete).toBe(true)
+    expect(r.hasGap(8, 10)).toBe(false)
   })
 
   it('joins nearby samples but not across a seek', () => {

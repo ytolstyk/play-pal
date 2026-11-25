@@ -1,6 +1,8 @@
-import { useMemo, useRef } from 'react'
+import { memo, useMemo, useRef } from 'react'
 import { clamp } from '../../../shared/guards'
+import type { Cue } from '../../../shared/types'
 import type { DisplayBins } from '../../../shared/waveDisplay'
+import { cueStyle } from '../cueStyle'
 import { capturePointer } from '../pointer'
 import { fullView, type View } from '../timelineView'
 import { WaveCanvas } from './WaveCanvas'
@@ -9,14 +11,26 @@ interface Props {
   bins: DisplayBins | null
   revision: number
   duration: number
+  cues: readonly Cue[]
   view: View
   /** Playhead position, seconds. */
   t: number
   onPan(start: number): void
 }
 
+/** Cue lines across the whole track; memoized because the overview re-renders with every clock tick and the cues rarely change. */
+const OverviewCues = memo(function OverviewCues({ cues, duration }: { cues: readonly Cue[]; duration: number }): React.JSX.Element {
+  return (
+    <>
+      {cues.map((c) => (
+        <div key={c.id} className="overview-cue" style={cueStyle(c.color, `${(duration > 0 ? clamp(c.time / duration, 0, 1) : 0) * 100}%`)} />
+      ))}
+    </>
+  )
+})
+
 /** The whole track in miniature with the visible stretch outlined; drag the outline (or click) to scroll a zoomed timeline. */
-export function TimelineOverview({ bins, revision, duration, view, t, onPan }: Props): React.JSX.Element {
+export function TimelineOverview({ bins, revision, duration, cues, view, t, onPan }: Props): React.JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
   const drag = useRef<{ pointerId: number; grab: number } | null>(null)
   const whole = useMemo(() => fullView(duration), [duration])
@@ -60,6 +74,7 @@ export function TimelineOverview({ bins, revision, duration, view, t, onPan }: P
       onLostPointerCapture={end}
     >
       <WaveCanvas bins={bins} revision={revision} view={whole} tone="idle" />
+      <OverviewCues cues={cues} duration={duration} />
       <div className="overview-window" style={{ left: pct(view.start), width: pct(view.span) }} />
       <div className="overview-playhead" style={{ left: pct(t) }} />
     </div>

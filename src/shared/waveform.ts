@@ -31,10 +31,18 @@ const ASSUMED_SAMPLE_RATE = 44_100
 const MIN_VOLUME = 1e-3
 /** Consecutive samples this many bins apart are one stretch of playback; a wider gap is a seek. */
 const MAX_FILL_BINS = 4
-/** A saved recording this much shorter or longer than the track is still taken as its recording (duration rounding). */
-export const SAVED_LENGTH_TOLERANCE_BINS = 2
+/**
+ * A saved recording this much shorter or longer than the track is still taken as its recording. A page or decoder reports
+ * a track's length differently from one load to the next (YouTube Music's can shift by up to a second while the video
+ * loads, a VBR file's estimate as it plays); a stricter match rebuilt the recorder, dropped the saved bins and let the
+ * next save overwrite the file with a fraction of it.
+ */
+export const SAVED_LENGTH_TOLERANCE_BINS = WAVE_BINS_PER_SECOND
 /** A track counts as fully recorded with this many bins missing: the last sample of a song rarely lands in its final bin. */
 const SLACK_BINS = 3
+
+/** Whether a saved recording of `savedBins` bins is about as long as a track of `trackBins` bins, so it can stand for its recording. */
+export const fitsTrack = (savedBins: number, trackBins: number): boolean => Math.abs(savedBins - trackBins) <= SAVED_LENGTH_TOLERANCE_BINS
 
 /** Bins per band of a recording (bands lie one after another). */
 export const binTotalOf = (bins: Uint8Array): number => Math.floor(bins.length / WAVE_BANDS)
@@ -100,15 +108,15 @@ export const encodeLevel = (level: number): number => 1 + Math.round(clamp(level
 /** A recorded byte (1-255) back to a 0-1 level. */
 export const levelOf = (bin: number): number => (bin - 1) / (MAX_LEVEL_BYTE - 1)
 
-/** A recording resampled to `bins` bins per band (nearest bin), so it can stand in for a recording of a different length. */
-function stretched(recording: Uint8Array, bins: number): Uint8Array {
+/**
+ * A recording cut or padded to `bins` bins per band, each bin keeping its own time: a longer one is truncated, a shorter
+ * one is followed by unrecorded bins. Nothing is stretched, so the picture stays true to the length it was recorded for.
+ */
+function fitted(recording: Uint8Array, bins: number): Uint8Array {
   const from = binTotalOf(recording)
   const out = new Uint8Array(bins * WAVE_BANDS)
-  if (from === 0) return out
-  for (let band = 0; band < WAVE_BANDS; band++) {
-    const source = bandSlice(recording, band)
-    for (let i = 0; i < bins; i++) out[band * bins + i] = source[Math.min(from - 1, Math.floor((i * from) / bins))]
-  }
+  const kept = Math.min(from, bins)
+  for (let band = 0; band < WAVE_BANDS; band++) out.set(bandSlice(recording, band).subarray(0, kept), band * bins)
   return out
 }
 
@@ -120,8 +128,7 @@ function stretched(recording: Uint8Array, bins: number): Uint8Array {
 export class WaveRecorder {
   readonly bins: Uint8Array
   /**
-   * What to draw: `bins`, with any stretch not recorded yet showing the `backdrop` (an earlier waveform stretched to this
-   * length) so a rebuilt recorder doesn't blank the screen. Only `bins` is saved, and only `bins` counts as recorded.
+   * What to draw: `bins`, with any stretch not recorded yet showing the `backdrop` (an earlier waveform of any length, cut or padded to this one) so a rebuilt recorder doesn't blank the screen. Only `bins` is saved, and only `bins` counts as recorded.
    */
   readonly shown: Uint8Array
   readonly binTotal: number
@@ -129,6 +136,8 @@ export class WaveRecorder {
   private readonly encoded = new Uint8Array(WAVE_BANDS)
   private recordedCount = 0
   private lastBin = -1
+  /** Bins the track really has, when that is fewer than `binTotal` (a kept recording a little longer than the track): the rest can never be played. */
+  private reachableBins: number
 
   /**
    * `saved` is a previous recording; it is used only when it is about as long as the track.
@@ -138,10 +147,11 @@ export class WaveRecorder {
   constructor(duration: number, saved?: Uint8Array | null, bins = binCount(duration), backdrop?: Uint8Array | null) {
     const n = bins
     this.binTotal = n
+    this.reachableBins = n
     this.bins = new Uint8Array(n * WAVE_BANDS)
-    this.shown = backdrop && isWaveBins(backdrop) ? stretched(backdrop, n) : new Uint8Array(n * WAVE_BANDS)
+    this.shown = backdrop && isWaveBins(backdrop) ? fitted(backdrop, n) : new Uint8Array(n * WAVE_BANDS)
     this.writtenThisSession = new Uint8Array(n)
-    if (saved && isWaveBins(saved) && Math.abs(binTotalOf(saved) - n) <= SAVED_LENGTH_TOLERANCE_BINS) this.load(saved)
+    if (saved && isWaveBins(saved) && fitsTrack(binTotalOf(saved), n)) this.load(saved)
   }
 
   /** Copies a saved recording in. A bin missing from any band counts as missing from all, so every recorded bin is whole. */
@@ -173,8 +183,13 @@ export class WaveRecorder {
     return this.bins[this.indexOf(0, bin)] !== 0
   }
 
+  /** Tells the recorder how many bins the track really has, so bins of a longer kept recording beyond its end don't count as missing. */
+  limitTo(trackBins: number): void {
+    this.reachableBins = Math.min(this.binTotal, Math.max(0, trackBins))
+  }
+
   get complete(): boolean {
-    return this.binTotal > 0 && this.recordedCount >= this.binTotal - SLACK_BINS
+    return this.binTotal > 0 && this.recordedCount >= this.reachableBins - SLACK_BINS
   }
 
   /** Share of the track recorded so far, 0-1. */
@@ -184,7 +199,7 @@ export class WaveRecorder {
 
   /** Whether any bin overlapping [from, to) seconds is still unrecorded. */
   hasGap(from: number, to: number): boolean {
-    const end = Math.min(this.binTotal, Math.ceil(to * WAVE_BINS_PER_SECOND))
+    const end = Math.min(this.reachableBins, Math.ceil(to * WAVE_BINS_PER_SECOND))
     for (let i = Math.max(0, Math.floor(from * WAVE_BINS_PER_SECOND)); i < end; i++) if (!this.isRecorded(i)) return true
     return false
   }
